@@ -1,22 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 
-let greetInputEl: HTMLInputElement | null;
-let greetMsgEl: HTMLElement | null;
-
-async function greet() {
-  if (greetMsgEl && greetInputEl) {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    greetMsgEl.textContent = await invoke("greet", {
-      name: greetInputEl.value,
-    });
-  }
-}
-
 window.addEventListener("DOMContentLoaded", () => {
-  greetInputEl = document.querySelector("#greet-input");
-  greetMsgEl = document.querySelector("#greet-msg");
-  document.querySelector("#greet-form")?.addEventListener("submit", (e) => {
-    e.preventDefault();
-    greet();
+  const btn = document.querySelector("#hello-btn");
+  const msg = document.querySelector("#hello-msg");
+
+  btn?.addEventListener("click", async () => {
+    // 调用 Rust 端的 "hello" 命令，类似于前端调后端 API
+    const result = await invoke<string>("hello");
+    if (msg) msg.textContent = result;
   });
 });
