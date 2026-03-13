@@ -1,10 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open, save, ask } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 // 模块级缓存：页面切换时保留用户输入，关闭程序自动释放
 const cache: Record<string, string> = {};
+
+/** 从完整路径中提取目录、文件名（不含扩展名）、扩展名 */
+function parsePath(fullPath: string) {
+  const sep = fullPath.includes("\\") ? "\\" : "/";
+  const lastSep = fullPath.lastIndexOf(sep);
+  const dir = lastSep >= 0 ? fullPath.substring(0, lastSep) : "";
+  const filename = lastSep >= 0 ? fullPath.substring(lastSep + 1) : fullPath;
+  const dotIdx = filename.lastIndexOf(".");
+  const name = dotIdx >= 0 ? filename.substring(0, dotIdx) : filename;
+  const ext = dotIdx >= 0 ? filename.substring(dotIdx) : "";
+  return { dir, name, ext, sep };
+}
 
 /**
  * 渲染主页：视频裁剪界面
@@ -44,11 +56,28 @@ export function renderHome(container: HTMLElement) {
           </div>
         </div>
 
-        <label class="label mt-4">输出文件</label>
-        <div class="join w-full">
-          <input id="output-path" type="text" class="input join-item flex-1"
-            placeholder="选择保存路径" readonly />
-          <button id="output-btn" class="btn join-item">浏览</button>
+        <div class="mt-4">
+          <label class="label cursor-pointer justify-start gap-2">
+            <input id="same-dir" type="checkbox" class="checkbox checkbox-sm" />
+            <span>输出到原目录</span>
+          </label>
+        </div>
+
+        <!-- 勾选时：显示文件名输入框 -->
+        <div id="output-samedir" class="hidden mt-2">
+          <label class="label">输出文件名</label>
+          <input id="output-name" type="text" class="input w-full"
+            placeholder="输入文件名（含扩展名）" />
+        </div>
+
+        <!-- 未勾选时：显示浏览选择路径 -->
+        <div id="output-browse" class="mt-2">
+          <label class="label">输出文件</label>
+          <div class="join w-full">
+            <input id="output-path" type="text" class="input join-item flex-1"
+              placeholder="选择保存路径" readonly />
+            <button id="output-btn" class="btn join-item">浏览</button>
+          </div>
         </div>
 
         <button id="trim-btn" class="btn btn-primary mt-6 w-full">开始裁剪</button>
@@ -82,6 +111,10 @@ export function renderHome(container: HTMLElement) {
 
   const inputPath = container.querySelector("#input-path") as HTMLInputElement;
   const outputPath = container.querySelector("#output-path") as HTMLInputElement;
+  const outputName = container.querySelector("#output-name") as HTMLInputElement;
+  const sameDirCheck = container.querySelector("#same-dir") as HTMLInputElement;
+  const outputSameDir = container.querySelector("#output-samedir")!;
+  const outputBrowse = container.querySelector("#output-browse")!;
   const startTime = container.querySelector("#start-time") as HTMLInputElement;
   const duration = container.querySelector("#duration") as HTMLInputElement;
   const framerate = container.querySelector("#framerate") as HTMLSelectElement;
@@ -97,16 +130,66 @@ export function renderHome(container: HTMLElement) {
 
   // 自动恢复所有 input/select 的缓存值，并监听变化同步缓存
   container.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input[id], select[id]").forEach((el) => {
-    if (cache[el.id]) el.value = cache[el.id];
-    el.addEventListener("input", () => { cache[el.id] = el.value; });
-    el.addEventListener("change", () => { cache[el.id] = el.value; });
+    if (cache[el.id]) {
+      if (el.type === "checkbox") {
+        (el as HTMLInputElement).checked = cache[el.id] === "true";
+      } else {
+        el.value = cache[el.id];
+      }
+    }
+    el.addEventListener("input", () => {
+      cache[el.id] = el.type === "checkbox" ? String((el as HTMLInputElement).checked) : el.value;
+    });
+    el.addEventListener("change", () => {
+      cache[el.id] = el.type === "checkbox" ? String((el as HTMLInputElement).checked) : el.value;
+    });
   });
+
+  // 切换输出模式：勾选/取消勾选
+  function toggleOutputMode() {
+    if (sameDirCheck.checked) {
+      outputSameDir.classList.remove("hidden");
+      outputBrowse.classList.add("hidden");
+      // 自动生成默认文件名
+      if (inputPath.value && !outputName.value) {
+        const { name, ext } = parsePath(inputPath.value);
+        outputName.value = `${name}-new${ext}`;
+        cache[outputName.id] = outputName.value;
+      }
+    } else {
+      outputSameDir.classList.add("hidden");
+      outputBrowse.classList.remove("hidden");
+    }
+  }
+
+  sameDirCheck.addEventListener("change", toggleOutputMode);
+  // 恢复缓存后立即同步 UI 状态
+  toggleOutputMode();
+
+  // 选择输入文件时，如果已勾选原目录，自动更新默认文件名
+  function updateDefaultName() {
+    if (sameDirCheck.checked && inputPath.value) {
+      const { name, ext } = parsePath(inputPath.value);
+      outputName.value = `${name}-new${ext}`;
+      cache[outputName.id] = outputName.value;
+    }
+  }
+
+  /** 根据当前模式计算最终输出路径 */
+  function getOutputPath(): string {
+    if (sameDirCheck.checked) {
+      const { dir, sep } = parsePath(inputPath.value);
+      return `${dir}${sep}${outputName.value}`;
+    }
+    return outputPath.value;
+  }
 
   // 播放输出视频
   playBtn.addEventListener("click", async () => {
-    if (outputPath.value) {
+    const out = getOutputPath();
+    if (out) {
       try {
-        await openPath(outputPath.value);
+        await openPath(out);
       } catch (e) {
         status.textContent = `播放失败: ${e}`;
         status.className = "text-sm mt-2 text-error";
@@ -116,9 +199,10 @@ export function renderHome(container: HTMLElement) {
 
   // 在文件管理器中显示输出文件
   revealBtn.addEventListener("click", async () => {
-    if (outputPath.value) {
+    const out = getOutputPath();
+    if (out) {
       try {
-        await revealItemInDir(outputPath.value);
+        await revealItemInDir(out);
       } catch (e) {
         status.textContent = `打开文件夹失败: ${e}`;
         status.className = "text-sm mt-2 text-error";
@@ -134,6 +218,7 @@ export function renderHome(container: HTMLElement) {
     if (selected) {
       inputPath.value = selected as string;
       cache[inputPath.id] = inputPath.value;
+      updateDefaultName();
     }
   });
 
@@ -162,10 +247,28 @@ export function renderHome(container: HTMLElement) {
 
   // 开始裁剪
   trimBtn.addEventListener("click", async () => {
-    if (!inputPath.value || !outputPath.value || !startTime.value || !duration.value) {
+    const finalOutput = getOutputPath();
+
+    if (!inputPath.value || !finalOutput || !startTime.value || !duration.value) {
       status.textContent = "请填写所有字段";
       status.className = "text-sm mt-2 text-warning";
       return;
+    }
+
+    if (sameDirCheck.checked && !outputName.value) {
+      status.textContent = "请输入输出文件名";
+      status.className = "text-sm mt-2 text-warning";
+      return;
+    }
+
+    // 检查文件是否已存在
+    const exists = await invoke<boolean>("check_file_exists", { path: finalOutput });
+    if (exists) {
+      const overwrite = await ask(`文件 "${outputName.value || finalOutput}" 已存在，是否覆盖？`, {
+        title: "文件已存在",
+        kind: "warning",
+      });
+      if (!overwrite) return;
     }
 
     trimActions.classList.add("hidden");
@@ -183,7 +286,7 @@ export function renderHome(container: HTMLElement) {
       const resolution = await invoke<string | null>("get_default_resolution");
       const result = await invoke<string>("trim_video", {
         input: inputPath.value,
-        output: outputPath.value,
+        output: finalOutput,
         start: startTime.value,
         duration: duration.value,
         resolution: resolution || null,

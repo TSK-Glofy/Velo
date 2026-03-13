@@ -17,6 +17,7 @@ pub fn run() {
             config::set_default_resolution,
             config::get_window_size,
             config::set_window_size,
+            config::check_file_exists,
             ffmpeg::trim_video,
             ffmpeg::merge_videos,
             ffmpeg::extract_frames,

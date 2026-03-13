@@ -118,3 +118,9 @@ pub fn set_window_size(size: String) -> Result<String, String> {
     save_config(&config)?;
     Ok("保存成功".to_string())
 }
+
+/// 检查文件是否存在
+#[tauri::command]
+pub fn check_file_exists(path: String) -> bool {
+    std::path::Path::new(&path).exists()
+}
