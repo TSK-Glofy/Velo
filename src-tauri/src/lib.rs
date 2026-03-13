@@ -18,6 +18,8 @@ pub fn run() {
             config::get_window_size,
             config::set_window_size,
             ffmpeg::trim_video,
+            ffmpeg::merge_videos,
+            ffmpeg::extract_frames,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

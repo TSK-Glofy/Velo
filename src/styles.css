@@ -22,10 +22,45 @@ body {
   min-width: 56px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding-top: 16px;
+  align-items: stretch;
+  padding: 16px 6px 0;
   gap: 8px;
   background: rgba(30, 30, 46, 0.9);
+  transition: width 0.2s ease, min-width 0.2s ease;
+  overflow: hidden;
+}
+
+#sidebar.expanded {
+  width: 160px;
+  min-width: 160px;
+}
+
+#sidebar .sidebar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 10px;
+  gap: 8px;
+  white-space: nowrap;
+  width: 100%;
+}
+
+/* 图标固定宽度，确保展开/收起时位置不偏移 */
+#sidebar .sidebar-icon {
+  flex-shrink: 0;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#sidebar .sidebar-label {
+  display: none;
+  font-size: 14px;
+}
+
+#sidebar.expanded .sidebar-label {
+  display: inline;
 }
 
 #content {

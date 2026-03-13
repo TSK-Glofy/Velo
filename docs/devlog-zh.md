@@ -331,3 +331,98 @@ Tauri 打包时从 `src-tauri/icons/` 目录读取图标文件，嵌入到最终
 `@tauri-apps/api/window` 和 `@tauri-apps/api/dpi` 在 `settings.ts` 中已经被静态导入，但 `main.ts` 里用了 `await import()` 动态导入。Vite 检测到同一个模块既有静态导入又有动态导入时会发出警告，因为动态导入不会把模块拆成单独的 chunk。
 
 解决方式：将 `main.ts` 和 `settings.ts` 中的动态导入统一改为顶部静态导入。
+
+---
+
+# v0.7.0 — 功能扩展：视频合并 + 逐帧提取 + 可折叠侧边栏 + 关于页 + 输入缓存
+
+## 目标
+
+大幅扩展 Velo 的功能面：新增视频合并和逐帧提取两大功能页面，重构侧边栏为可展开/收起的图标导航栏，在设置页增加"关于"信息，并为所有页面实现通用的输入缓存机制。同时新增帧率控制选项。
+
+## 新增功能
+
+### 视频合并（merge.ts + ffmpeg.rs）
+
+使用 FFmpeg 的 concat demuxer 实现多视频无损合并：
+
+- 支持多文件选择，可上下移动调整顺序，可删除
+- 使用 `-f concat -safe 0 -c copy` 参数组合，stream copy 模式不重新编码，速度极快
+- Rust 端在系统临时目录创建 `velo_concat_list.txt` 文件列表供 concat demuxer 读取，任务完成后自动清理
+- 复用 `run_ffmpeg_cmd` 通用执行器，进度条和状态行与裁剪页一致
+
+### 逐帧提取（frames.ts + ffmpeg.rs）
+
+将视频帧导出为图片序列：
+
+- 支持可选的起始时间和持续时间（不填则提取整个视频）
+- 提取帧率下拉选项：原始（全部帧）/ 1 / 2 / 5 / 10 / 24 / 30 fps，使用 `-vf fps=N` 滤镜
+- 输出格式可选：PNG / JPG / BMP
+- 输出为文件夹，图片命名为 `frame_00001.png` 格式（5位序号）
+- 复用通用 FFmpeg 执行器和事件机制
+
+### 帧率控制（home.ts + ffmpeg.rs）
+
+裁剪页面新增帧率下拉选项（原始 / 15 / 24 / 30 / 60 / 120），对应 FFmpeg 的 `-r` 参数。放在起始时间和持续时间同一行的三列网格中，不额外占用空间。
+
+### 可折叠侧边栏（sidebar.ts + styles.css）
+
+侧边栏从固定图标栏升级为可展开/收起的导航栏：
+
+- 顶部汉堡菜单按钮控制展开/收起，采用与导航按钮相同的 HTML 结构确保图标对齐
+- 收起时只显示 24px 图标，展开时显示图标 + 文字标签
+- CSS transition 实现平滑的宽度过渡动画（56px ↔ 160px，0.2s）
+- 所有按钮使用 `flex-start` + `padding-left: 10px` 固定图标位置，动画过程中图标不跳动
+- 导航配置 `NAV_ITEMS` 数组化，新增页面只需添加一项
+
+### 关于信息（settings.ts）
+
+设置页采用双栏布局：左栏设置项，右栏关于卡片：
+
+- 应用图标（来自 `public/icon.png`）、名称、版本号（v0.7.0）、作者（TSK-Glofy）
+- GitHub 链接按钮，使用 `@tauri-apps/plugin-opener` 的 `openUrl` 打开浏览器
+
+### 输入缓存机制
+
+所有页面（裁剪、合并、逐帧提取）实现模块级缓存：
+
+- 裁剪页和逐帧提取页使用通用 `Record<string, string>` + `querySelectorAll("input[id], select[id]")` 自动发现和恢复所有表单元素
+- 合并页缓存文件列表和输出路径
+- 页面切换时数据不丢失，关闭程序自动释放
+
+### 播放与定位（home.ts + merge.ts）
+
+裁剪和合并完成后显示两个操作按钮：
+
+- "播放视频"：使用 `openPath` 调用系统默认播放器
+- "打开输出文件夹"：使用 `revealItemInDir` 在文件管理器中定位输出文件
+
+## 后端重构
+
+### FFmpeg 通用执行器（ffmpeg.rs）
+
+提取 `run_ffmpeg_cmd` 共享函数，被裁剪、合并、逐帧提取三个命令复用：
+
+- 启动 FFmpeg 子进程
+- stderr 转发到前端事件
+- stdout 解析 `-progress` key=value 输出，提取 frame、fps、bitrate、speed、out_time、total_size
+- 输出大小自动格式化（B / KB / MB）
+- 计算进度百分比并推送 `ffmpeg-progress` 事件
+
+## 权限配置
+
+`capabilities/default.json` 新增：
+
+| 权限 | 用途 |
+|------|------|
+| `core:window:allow-set-size` | 前端调整窗口大小 |
+| `opener:allow-open-path` + scope `**` | 允许打开任意路径的文件 |
+
+## 版本号统一更新
+
+| 文件 | 字段 |
+|------|------|
+| `package.json` | `version: "0.7.0"` |
+| `src-tauri/Cargo.toml` | `version = "0.7.0"` |
+| `src-tauri/tauri.conf.json` | `version: "0.7.0"` |
+| `src/settings.ts` | 关于卡片显示 v0.7.0 |

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { applyBackground } from "./main";
@@ -17,58 +18,84 @@ export async function renderSettings(container: HTMLElement) {
   container.innerHTML = `
     <h1 class="text-2xl font-bold mb-6">设置</h1>
 
-    <div class="card bg-base-200/80 shadow-md mb-6">
-      <div class="card-body">
-        <h2 class="card-title text-lg">FFmpeg 路径</h2>
-        <div class="join w-full">
-          <input id="ffmpeg-path" type="text" class="input join-item flex-1"
-            placeholder="ffmpeg.exe 路径" readonly value="${currentFfmpeg || ""}" />
-          <button id="ffmpeg-browse" class="btn join-item">浏览</button>
+    <div class="flex gap-6">
+      <!-- 左栏：设置项 -->
+      <div class="flex-1 min-w-0">
+        <div class="card bg-base-200/80 shadow-md mb-6">
+          <div class="card-body">
+            <h2 class="card-title text-lg">FFmpeg 路径</h2>
+            <div class="join w-full">
+              <input id="ffmpeg-path" type="text" class="input join-item flex-1"
+                placeholder="ffmpeg.exe 路径" readonly value="${currentFfmpeg || ""}" />
+              <button id="ffmpeg-browse" class="btn join-item">浏览</button>
+            </div>
+            <div id="ffmpeg-msg" class="text-sm mt-1"></div>
+          </div>
         </div>
-        <div id="ffmpeg-msg" class="text-sm mt-1"></div>
-      </div>
-    </div>
 
-    <div class="card bg-base-200/80 shadow-md mb-6">
-      <div class="card-body">
-        <h2 class="card-title text-lg">自定义背景</h2>
-        <p id="bg-current" class="text-sm opacity-70 mb-2">当前: ${currentBg || "未设置"}</p>
-        <div class="flex gap-2">
-          <button id="bg-browse" class="btn">选择图片</button>
-          <button id="bg-clear" class="btn btn-outline">清除背景</button>
+        <div class="card bg-base-200/80 shadow-md mb-6">
+          <div class="card-body">
+            <h2 class="card-title text-lg">自定义背景</h2>
+            <p id="bg-current" class="text-sm opacity-70 mb-2">当前: ${currentBg || "未设置"}</p>
+            <div class="flex gap-2">
+              <button id="bg-browse" class="btn">选择图片</button>
+              <button id="bg-clear" class="btn btn-outline">清除背景</button>
+            </div>
+            <div id="bg-msg" class="text-sm mt-1"></div>
+          </div>
         </div>
-        <div id="bg-msg" class="text-sm mt-1"></div>
-      </div>
-    </div>
 
-    <div class="card bg-base-200/80 shadow-md mb-6">
-      <div class="card-body">
-        <h2 class="card-title text-lg">默认输出分辨率</h2>
-        <p class="text-sm opacity-70 mb-2">裁剪时默认使用的分辨率，选择"原始"则不缩放</p>
-        <select id="resolution-select" class="select w-full">
-          <option value="">原始（不缩放）</option>
-          <option value="1920x1080">1920x1080 (1080p)</option>
-          <option value="1600x900">1600x900</option>
-          <option value="1280x720">1280x720 (720p)</option>
-          <option value="854x480">854x480 (480p)</option>
-          <option value="640x360">640x360 (360p)</option>
-        </select>
-        <div id="res-msg" class="text-sm mt-1"></div>
-      </div>
-    </div>
+        <div class="card bg-base-200/80 shadow-md mb-6">
+          <div class="card-body">
+            <h2 class="card-title text-lg">默认输出分辨率</h2>
+            <p class="text-sm opacity-70 mb-2">裁剪时默认使用的分辨率，选择"原始"则不缩放</p>
+            <select id="resolution-select" class="select w-full">
+              <option value="">原始（不缩放）</option>
+              <option value="1920x1080">1920x1080 (1080p)</option>
+              <option value="1600x900">1600x900</option>
+              <option value="1280x720">1280x720 (720p)</option>
+              <option value="854x480">854x480 (480p)</option>
+              <option value="640x360">640x360 (360p)</option>
+            </select>
+            <div id="res-msg" class="text-sm mt-1"></div>
+          </div>
+        </div>
 
-    <div class="card bg-base-200/80 shadow-md mb-6">
-      <div class="card-body">
-        <h2 class="card-title text-lg">窗口尺寸</h2>
-        <p class="text-sm opacity-70 mb-2">选择窗口大小，切换后立即生效</p>
-        <select id="winsize-select" class="select w-full">
-          <option value="">默认 (800x600)</option>
-          <option value="1600x900">1600x900</option>
-          <option value="1280x720">1280x720</option>
-          <option value="1024x768">1024x768</option>
-          <option value="800x600">800x600</option>
-        </select>
-        <div id="winsize-msg" class="text-sm mt-1"></div>
+        <div class="card bg-base-200/80 shadow-md mb-6">
+          <div class="card-body">
+            <h2 class="card-title text-lg">窗口尺寸</h2>
+            <p class="text-sm opacity-70 mb-2">选择窗口大小，切换后立即生效</p>
+            <select id="winsize-select" class="select w-full">
+              <option value="">默认 (800x600)</option>
+              <option value="1600x900">1600x900</option>
+              <option value="1280x720">1280x720</option>
+              <option value="1024x768">1024x768</option>
+              <option value="800x600">800x600</option>
+            </select>
+            <div id="winsize-msg" class="text-sm mt-1"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右栏：关于 -->
+      <div class="w-64 shrink-0">
+        <div class="card bg-base-200/80 shadow-md">
+          <div class="card-body">
+            <h2 class="card-title text-lg mb-2">关于</h2>
+            <div class="flex items-center gap-4 mb-4">
+              <img src="/icon.png" alt="Velo" class="w-16 h-16 rounded-xl shrink-0" />
+              <div>
+                <h3 class="text-lg font-bold">Velo</h3>
+                <p class="text-sm opacity-70">v0.7.0</p>
+                <p class="text-sm opacity-70">TSK-Glofy</p>
+              </div>
+            </div>
+            <a id="github-link" class="btn btn-outline btn-sm w-full gap-2" href="#">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+              Github
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -170,5 +197,11 @@ export async function renderSettings(container: HTMLElement) {
       bgMsg.textContent = `失败: ${e}`;
       bgMsg.className = "text-sm mt-1 text-error";
     }
+  });
+
+  // Github 链接
+  container.querySelector("#github-link")!.addEventListener("click", (e) => {
+    e.preventDefault();
+    openUrl("https://github.com/TSK-Glofy/Velo");
   });
 }

@@ -4,7 +4,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { renderSidebar } from "./sidebar";
 import { renderHome } from "./home";
+import { renderMerge } from "./merge";
 import { renderSettings } from "./settings";
+import { renderFrames } from "./frames";
 import { renderSetup } from "./setup";
 
 /** 加载用户设置的背景图 */
@@ -19,8 +21,12 @@ export async function applyBackground() {
 
 /** 导航到指定页面 */
 function navigate(page: string, content: HTMLElement) {
-  if (page === "home") {
+  if (page === "trim") {
     renderHome(content);
+  } else if (page === "merge") {
+    renderMerge(content);
+  } else if (page === "frames") {
+    renderFrames(content);
   } else if (page === "settings") {
     renderSettings(content);
   }

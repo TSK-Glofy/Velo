@@ -329,3 +329,98 @@ Note: In development mode (`tauri dev`), the window title bar icon won't update 
 `@tauri-apps/api/window` and `@tauri-apps/api/dpi` were already statically imported in `settings.ts`, but `main.ts` used `await import()` for dynamic imports. Vite warns when the same module has both static and dynamic imports, since the dynamic import won't split it into a separate chunk anyway.
 
 Fix: converted all dynamic imports in `main.ts` and `settings.ts` to top-level static imports for consistency.
+
+---
+
+# v0.7.0 — Feature Expansion: Video Merge + Frame Extraction + Collapsible Sidebar + About Page + Input Caching
+
+## Goal
+
+Significantly expand Velo's feature set: add video merging and frame extraction pages, upgrade the sidebar to a collapsible icon navigation bar, add an "About" section to settings, and implement a universal input caching mechanism across all pages. Also adds framerate control for trimming.
+
+## New Features
+
+### Video Merge (merge.ts + ffmpeg.rs)
+
+Lossless multi-video merging using FFmpeg's concat demuxer:
+
+- Multi-file selection with drag-to-reorder (up/down buttons) and remove
+- Uses `-f concat -safe 0 -c copy` — stream copy mode avoids re-encoding for maximum speed
+- Rust backend creates a temporary `velo_concat_list.txt` in the system temp directory for the concat demuxer, auto-cleaned after completion
+- Reuses the shared `run_ffmpeg_cmd` executor; progress bar and status line match the trim page
+
+### Frame Extraction (frames.ts + ffmpeg.rs)
+
+Export video frames as an image sequence:
+
+- Optional start time and duration (omit to extract the entire video)
+- Extraction FPS dropdown: Original (all frames) / 1 / 2 / 5 / 10 / 24 / 30 fps, using the `-vf fps=N` filter
+- Output format options: PNG / JPG / BMP
+- Outputs to a folder, images named `frame_00001.png` (5-digit sequence number)
+- Reuses the shared FFmpeg executor and event mechanism
+
+### Framerate Control (home.ts + ffmpeg.rs)
+
+New framerate dropdown on the trim page (Original / 15 / 24 / 30 / 60 / 120), corresponding to FFmpeg's `-r` parameter. Placed in a 3-column grid alongside start time and duration, taking no extra vertical space.
+
+### Collapsible Sidebar (sidebar.ts + styles.css)
+
+Sidebar upgraded from a fixed icon bar to a collapsible navigation panel:
+
+- Top hamburger button toggles expand/collapse, using the same HTML structure as nav buttons for icon alignment
+- Collapsed: 24px icons only; Expanded: icons + text labels
+- CSS transition for smooth width animation (56px ↔ 160px, 0.2s)
+- All buttons use `flex-start` + `padding-left: 10px` to lock icon position — no jumping during animation
+- Navigation config is an `NAV_ITEMS` array; adding a new page requires just one new entry
+
+### About Section (settings.ts)
+
+Settings page uses a two-column layout: left column for settings, right column for the About card:
+
+- App icon (from `public/icon.png`), name, version (v0.7.0), author (TSK-Glofy)
+- GitHub link button using `@tauri-apps/plugin-opener`'s `openUrl` to launch the browser
+
+### Input Caching
+
+All pages (trim, merge, frame extraction) implement module-level caching:
+
+- Trim and frame extraction pages use a generic `Record<string, string>` + `querySelectorAll("input[id], select[id]")` to auto-discover and restore all form elements
+- Merge page caches the file list and output path
+- Data persists across page switches, released automatically when the app closes
+
+### Play & Reveal (home.ts + merge.ts)
+
+After trim or merge completes, two action buttons appear:
+
+- "Play Video": uses `openPath` to launch the system default player
+- "Open Output Folder": uses `revealItemInDir` to locate the output file in the file manager
+
+## Backend Refactoring
+
+### Shared FFmpeg Executor (ffmpeg.rs)
+
+Extracted `run_ffmpeg_cmd` as a shared function, reused by trim, merge, and frame extraction commands:
+
+- Spawns the FFmpeg subprocess
+- Forwards stderr to frontend events
+- Parses `-progress` key=value output from stdout: frame, fps, bitrate, speed, out_time, total_size
+- Auto-formats output size (B / KB / MB)
+- Calculates progress percentage and pushes `ffmpeg-progress` events
+
+## Permission Configuration
+
+Added to `capabilities/default.json`:
+
+| Permission | Purpose |
+|-----------|---------|
+| `core:window:allow-set-size` | Allow frontend to resize the window |
+| `opener:allow-open-path` + scope `**` | Allow opening files at any path |
+
+## Version Number Update
+
+| File | Field |
+|------|-------|
+| `package.json` | `version: "0.7.0"` |
+| `src-tauri/Cargo.toml` | `version = "0.7.0"` |
+| `src-tauri/tauri.conf.json` | `version: "0.7.0"` |
+| `src/settings.ts` | About card displays v0.7.0 |
