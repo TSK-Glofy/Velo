@@ -1,12 +1,51 @@
+import "./styles.css";
 import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { renderSidebar } from "./sidebar";
+import { renderHome } from "./home";
+import { renderSettings } from "./settings";
+import { renderSetup } from "./setup";
 
-window.addEventListener("DOMContentLoaded", () => {
-  const btn = document.querySelector("#hello-btn");
-  const msg = document.querySelector("#hello-msg");
+/** 加载用户设置的背景图 */
+export async function applyBackground() {
+  const bgPath = await invoke<string | null>("get_background_image");
+  if (bgPath) {
+    document.body.style.backgroundImage = `url('${convertFileSrc(bgPath)}')`;
+  } else {
+    document.body.style.backgroundImage = "";
+  }
+}
 
-  btn?.addEventListener("click", async () => {
-    // 调用 Rust 端的 "hello" 命令，类似于前端调后端 API
-    const result = await invoke<string>("hello");
-    if (msg) msg.textContent = result;
-  });
+/** 导航到指定页面 */
+function navigate(page: string, content: HTMLElement) {
+  if (page === "home") {
+    renderHome(content);
+  } else if (page === "settings") {
+    renderSettings(content);
+  }
+}
+
+window.addEventListener("DOMContentLoaded", async () => {
+  const sidebar = document.querySelector("#sidebar") as HTMLElement;
+  const content = document.querySelector("#content") as HTMLElement;
+
+  // 加载背景图
+  await applyBackground();
+
+  // 检查是否已配置 ffmpeg 路径
+  const ffmpegPath = await invoke<string | null>("get_ffmpeg_path");
+
+  if (!ffmpegPath) {
+    // 首次启动：隐藏侧边栏，显示设置引导
+    sidebar.style.display = "none";
+    renderSetup(content, () => {
+      sidebar.style.display = "flex";
+      renderSidebar(sidebar, (page) => navigate(page, content));
+      renderHome(content);
+    });
+  } else {
+    // 正常启动：渲染侧边栏 + 首页
+    renderSidebar(sidebar, (page) => navigate(page, content));
+    renderHome(content);
+  }
 });

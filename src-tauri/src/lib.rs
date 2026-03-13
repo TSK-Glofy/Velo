@@ -1,16 +1,20 @@
-// 用 #[tauri::command] 标记的函数可以被前端通过 invoke() 调用
-// 这是前后端通信的桥梁，每个命令就像一个 API 端点
-#[tauri::command]
-fn hello() -> String {
-    "Hello from Rust!".to_string()
-}
+// 每个 mod 对应 src/ 下的一个文件，各自负责一块功能
+mod config;
+mod ffmpeg;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        // 在这里注册所有命令，前端才能调用到
-        .invoke_handler(tauri::generate_handler![hello])
+        .plugin(tauri_plugin_dialog::init())
+        // 注册所有命令，前端通过 invoke("命令名") 调用
+        .invoke_handler(tauri::generate_handler![
+            config::get_ffmpeg_path,
+            config::set_ffmpeg_path,
+            config::get_background_image,
+            config::set_background_image,
+            ffmpeg::trim_video,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
