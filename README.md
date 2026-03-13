@@ -1,7 +1,70 @@
-# Tauri + Vanilla TS
+# Velo
 
-This template should help get you started developing with Tauri in vanilla HTML, CSS and Typescript.
+A lightweight FFmpeg GUI built with Tauri + TypeScript + Rust.
 
-## Recommended IDE Setup
+Velo provides a clean interface for common FFmpeg operations, starting with video trimming. No command line needed.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## Features
+
+- **Video Trimming** — Select a video, set start time and duration, get a trimmed clip
+- **Real-time FFmpeg Output** — See FFmpeg's progress log live in the app
+- **Custom Resolution** — Preset output resolution (1080p, 720p, 480p, etc.) or keep original
+- **Custom Background** — Personalize the app with your own background image
+- **First-launch Setup** — Guided configuration for FFmpeg path on first run
+
+## Screenshots
+
+*Coming soon*
+
+## Getting Started
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18+)
+- [Rust](https://rustup.rs/)
+- [FFmpeg](https://ffmpeg.org/download.html) — download and place anywhere, Velo will ask for the path on first launch
+
+### Development
+
+```bash
+npm install
+npm run tauri dev
+```
+
+### Build
+
+```bash
+npm run tauri build
+```
+
+The executable will be in `src-tauri/target/release/velo.exe`.
+
+## Project Structure
+
+```
+src/                    # Frontend (TypeScript)
+  main.ts              # Entry point, routing, background loading
+  sidebar.ts           # Sidebar navigation component
+  home.ts              # Video trimming page
+  settings.ts          # Settings page (FFmpeg path, background, resolution)
+  setup.ts             # First-launch onboarding
+  styles.css           # Tailwind + custom styles
+
+src-tauri/src/          # Backend (Rust)
+  main.rs              # Program entry
+  lib.rs               # Module registration
+  config.rs            # Config management (read/write JSON)
+  ffmpeg.rs            # FFmpeg process execution
+
+docs/                   # Dev logs (Chinese & English)
+```
+
+## Tech Stack
+
+- **Frontend**: TypeScript, Tailwind CSS, DaisyUI
+- **Backend**: Rust, Tauri v2
+- **Build**: Vite
+
+## License
+
+See [LICENSE](LICENSE) for details.

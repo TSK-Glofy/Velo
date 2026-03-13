@@ -13,6 +13,10 @@ pub fn run() {
             config::set_ffmpeg_path,
             config::get_background_image,
             config::set_background_image,
+            config::get_default_resolution,
+            config::set_default_resolution,
+            config::get_window_size,
+            config::set_window_size,
             ffmpeg::trim_video,
         ])
         .run(tauri::generate_context!())

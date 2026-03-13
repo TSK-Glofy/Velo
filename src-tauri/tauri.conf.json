@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "velo",
+        "title": "Velo",
         "width": 800,
         "height": 600
       }

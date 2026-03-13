@@ -1,6 +1,7 @@
 import "./styles.css";
-import { invoke } from "@tauri-apps/api/core";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 import { renderSidebar } from "./sidebar";
 import { renderHome } from "./home";
 import { renderSettings } from "./settings";
@@ -31,6 +32,13 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // 加载背景图
   await applyBackground();
+
+  // 应用已保存的窗口尺寸
+  const savedSize = await invoke<string | null>("get_window_size");
+  if (savedSize) {
+    const [w, h] = savedSize.split("x").map(Number);
+    await getCurrentWindow().setSize(new LogicalSize(w, h));
+  }
 
   // 检查是否已配置 ffmpeg 路径
   const ffmpegPath = await invoke<string | null>("get_ffmpeg_path");

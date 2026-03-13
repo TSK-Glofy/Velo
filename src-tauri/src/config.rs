@@ -8,6 +8,8 @@ use std::path::PathBuf;
 pub struct AppConfig {
     pub ffmpeg_path: Option<String>,
     pub background_image: Option<String>,
+    pub default_resolution: Option<String>,
+    pub window_size: Option<String>,
 }
 
 /// 获取配置文件的存放路径: ~/.velo/config.json
@@ -75,6 +77,44 @@ pub fn set_background_image(path: String) -> Result<String, String> {
     }
     let mut config = load_config();
     config.background_image = Some(path);
+    save_config(&config)?;
+    Ok("保存成功".to_string())
+}
+
+/// 获取默认分辨率
+#[tauri::command]
+pub fn get_default_resolution() -> Option<String> {
+    load_config().default_resolution
+}
+
+/// 保存默认分辨率
+#[tauri::command]
+pub fn set_default_resolution(resolution: String) -> Result<String, String> {
+    let mut config = load_config();
+    config.default_resolution = if resolution.is_empty() {
+        None
+    } else {
+        Some(resolution)
+    };
+    save_config(&config)?;
+    Ok("保存成功".to_string())
+}
+
+/// 获取窗口尺寸设置
+#[tauri::command]
+pub fn get_window_size() -> Option<String> {
+    load_config().window_size
+}
+
+/// 保存窗口尺寸设置
+#[tauri::command]
+pub fn set_window_size(size: String) -> Result<String, String> {
+    let mut config = load_config();
+    config.window_size = if size.is_empty() {
+        None
+    } else {
+        Some(size)
+    };
     save_config(&config)?;
     Ok("保存成功".to_string())
 }

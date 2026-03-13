@@ -161,3 +161,171 @@ If the user hasn't configured an FFmpeg path, the sidebar is hidden and the full
 |--------|-----------|
 | Added | `tailwindcss`, `@tailwindcss/vite`, `daisyui` |
 | Removed | `@picocss/pico` |
+
+---
+
+# v0.4.1 — Default Output Resolution Setting
+
+## Goal
+
+Add a default output resolution option to the settings page. Users can preset a commonly used resolution that is automatically applied when trimming videos.
+
+## Design Approach
+
+### Feature Placement
+
+Resolution setting is a "user preference", so it belongs in the settings page rather than the trim page. During trimming, the saved default is automatically read — no need to specify it every time. Selecting "Original" skips any scaling and preserves the source video resolution.
+
+### Preset Resolution List
+
+Common resolution tiers are provided:
+
+| Resolution | Description |
+|-----------|-------------|
+| Original | No scaling, keeps source dimensions |
+| 1920x1080 | 1080p Full HD |
+| 1600x900 | Common laptop screen resolution |
+| 1280x720 | 720p HD |
+| 854x480 | 480p SD |
+| 640x360 | 360p low resolution |
+
+### Implementation
+
+The config layer gains a `default_resolution` field, stored in the same `config.json`. The FFmpeg backend applies scaling via the `-vf scale=width:height` filter. If resolution is empty, no filter arguments are added.
+
+### Interaction Detail
+
+The settings page uses a dropdown select. Changes are saved automatically on selection — no extra "Save" button click required. Fewer steps, smoother experience.
+
+---
+
+# v0.4.2 — Window Size Presets
+
+## Goal
+
+Add a window size selector to the settings page. Users can switch between common sizes, and the window resizes immediately. The chosen size is also restored on next launch.
+
+## Design Approach
+
+### Feature Placement
+
+Window size is a "user preference", so it belongs in the settings page alongside output resolution. Unlike output resolution (which controls the video's rendered dimensions), this option controls the Velo application window itself. They are independent settings.
+
+### Preset Size List
+
+| Size | Description |
+|------|-------------|
+| Default | 800x600, the built-in default |
+| 1600x900 | Large, suitable for high-res displays |
+| 1280x720 | Medium, fits most laptops |
+| 1024x768 | Classic 4:3 ratio |
+| 800x600 | Compact |
+
+### Implementation
+
+The config layer gains a `window_size` field, stored as `"widthxheight"` (e.g., `"1280x720"`). The frontend uses Tauri's window API (`getCurrentWindow().setSize()`) to resize immediately.
+
+### Two Activation Points
+
+1. **On settings change**: The window resizes instantly when the user selects a new size — WYSIWYG
+2. **On app launch**: `main.ts` reads the saved size during initialization and applies it, ensuring the window always opens at the user's last chosen size
+
+### Relationship to Output Resolution
+
+The v0.4.1 "default output resolution" controls the FFmpeg output video dimensions. The v0.4.2 "window size" controls the Velo application window size. They are independent — stored separately, read separately, and do not affect each other.
+
+---
+
+# v0.5.0 — Trim Progress Bar
+
+## Goal
+
+Display a real-time progress bar during video trimming, so users can see exactly how far along the process is — replacing the raw-log-only experience.
+
+## Design Approach
+
+### The Problem with FFmpeg's Default Output
+
+FFmpeg writes its progress info (frame count, fps, current time) to stderr using `\r` (carriage return) to overwrite the same line repeatedly. The previous `BufReader::lines()` approach splits by newline, so it only captured FFmpeg's startup header — not the real-time progress updates.
+
+### Solution: -progress pipe:1
+
+Adding `-progress pipe:1` to the FFmpeg command makes it output progress data as key=value pairs, one per line, to stdout. Each group ends with `progress=continue`. The key field is `out_time_us` — the current processed position in microseconds.
+
+This cleanly separates concerns: stdout carries structured progress data (parseable), stderr carries log information (raw output).
+
+### Calculating the Percentage
+
+The user's input duration is the total length. Convert it to microseconds, then `out_time_us / total_us * 100` gives the percentage. Rust calculates this and pushes it to the frontend via the `ffmpeg-progress` event. The frontend simply updates the progress bar value.
+
+### Time Format Parsing
+
+Users may enter `10` (seconds), `1:30` (min:sec), or `1:02:30` (hr:min:sec). The Rust backend implements a `parse_duration_ms` function that handles all three formats.
+
+### Frontend Progress Bar
+
+Uses DaisyUI's `progress` component, placed above the log area with a percentage label beside it. It resets to 0% when trimming starts and receives 100% from the Rust backend on completion.
+
+---
+
+# v0.5.1 — FFmpeg Status Summary + UI Polish
+
+## Goal
+
+Replace the raw FFmpeg log output with a structured, single-line status summary showing only the key information users care about. Also polish several UI details during the trimming process.
+
+## Design Approach
+
+### Status Summary Instead of Log Accumulation
+
+The old log area appended every line of FFmpeg output, which was verbose and mostly unintelligible to users. The new approach extracts key fields from `-progress` structured data (time, frame, fps, speed, bitrate, size) and composes a single summary line that updates in place.
+
+Users now see one clean status line instead of a wall of scrolling logs.
+
+### Show Progress Section on Demand
+
+The progress bar and status line are meaningless before trimming starts. Wrapped them in a container with Tailwind's `hidden` class, which is removed when "Start Trim" is clicked. After trimming completes, the section stays visible so users can see the final status.
+
+### Loading Spinner Fix
+
+DaisyUI's `loading` class applied directly to a button inherits the button's font size — on a full-width button, the spinner looks oversized. Replaced it with an inline `loading-sm` spinner element before the button text for consistent sizing.
+
+### Windows Compatibility
+
+Added the `CREATE_NO_WINDOW` flag (`0x08000000`) to prevent FFmpeg from spawning a visible console window on Windows. Also restored stderr forwarding to ensure FFmpeg errors are visible to the user.
+
+---
+
+# v0.6.0 — Custom Icon + Title Fix + Build Optimization
+
+## Goal
+
+Change the window title from lowercase "velo" to properly capitalized "Velo", support custom application icons, and eliminate Vite build warnings about dynamic imports.
+
+## Design Approach
+
+### Window Title
+
+The `title` field in `tauri.conf.json` controls the window title bar text. As a product name, proper capitalization is more professional.
+
+### Custom Icon
+
+Tauri reads icon files from `src-tauri/icons/` during packaging and embeds them into the final executable. Required files:
+
+| File | Size | Purpose |
+|------|------|---------|
+| 32x32.png | 32x32 | Taskbar small icon |
+| 128x128.png | 128x128 | General icon |
+| 128x128@2x.png | 256x256 | HiDPI icon |
+| icon.ico | Multi-size | Windows exe icon |
+| icon.icns | Multi-size | macOS icon |
+
+Users only need to prepare a single 1024x1024 PNG source image and run `npm run tauri icon` to auto-generate all sizes.
+
+Note: In development mode (`tauri dev`), the window title bar icon won't update — only the built exe uses the custom icon. This is Windows behavior.
+
+### Eliminating Vite Dynamic Import Warnings
+
+`@tauri-apps/api/window` and `@tauri-apps/api/dpi` were already statically imported in `settings.ts`, but `main.ts` used `await import()` for dynamic imports. Vite warns when the same module has both static and dynamic imports, since the dynamic import won't split it into a separate chunk anyway.
+
+Fix: converted all dynamic imports in `main.ts` and `settings.ts` to top-level static imports for consistency.

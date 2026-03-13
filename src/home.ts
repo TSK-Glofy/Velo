@@ -41,10 +41,22 @@ export function renderHome(container: HTMLElement) {
       </div>
     </div>
 
-    <div class="card bg-base-200/80 shadow-md">
-      <div class="card-body">
-        <label class="label">FFmpeg 输出日志</label>
-        <pre id="ffmpeg-log"></pre>
+    <div id="trim-info" class="hidden">
+      <div class="card bg-base-200/80 shadow-md mb-6">
+        <div class="card-body">
+          <label class="label">进度</label>
+          <div class="flex items-center gap-3">
+            <progress id="trim-progress" class="progress progress-primary flex-1" value="0" max="100"></progress>
+            <span id="trim-percent" class="text-sm font-mono w-12 text-right">0%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card bg-base-200/80 shadow-md">
+        <div class="card-body">
+          <label class="label">FFmpeg 状态</label>
+          <p id="ffmpeg-status" class="font-mono text-sm opacity-70">处理中...</p>
+        </div>
       </div>
     </div>
   `;
@@ -55,7 +67,10 @@ export function renderHome(container: HTMLElement) {
   const duration = container.querySelector("#duration") as HTMLInputElement;
   const trimBtn = container.querySelector("#trim-btn") as HTMLButtonElement;
   const status = container.querySelector("#trim-status")!;
-  const logArea = container.querySelector("#ffmpeg-log")!;
+  const trimInfo = container.querySelector("#trim-info")!;
+  const statusLine = container.querySelector("#ffmpeg-status")!;
+  const progressBar = container.querySelector("#trim-progress") as HTMLProgressElement;
+  const percentText = container.querySelector("#trim-percent")!;
 
   // 选择输入视频文件
   container.querySelector("#input-btn")!.addEventListener("click", async () => {
@@ -77,10 +92,16 @@ export function renderHome(container: HTMLElement) {
     }
   });
 
-  // 监听 ffmpeg 实时输出事件
-  listen<string>("ffmpeg-log", (event) => {
-    logArea.textContent += event.payload + "\n";
-    logArea.scrollTop = logArea.scrollHeight;
+  // 监听 ffmpeg 状态摘要（实时覆盖，只显示最新一行）
+  listen<string>("ffmpeg-status", (event) => {
+    statusLine.textContent = event.payload;
+  });
+
+  // 监听进度百分比事件
+  listen<number>("ffmpeg-progress", (event) => {
+    const pct = Math.round(event.payload);
+    progressBar.value = pct;
+    percentText.textContent = `${pct}%`;
   });
 
   // 开始裁剪
@@ -91,18 +112,23 @@ export function renderHome(container: HTMLElement) {
       return;
     }
 
-    logArea.textContent = "";
+    trimInfo.classList.remove("hidden");
+    statusLine.textContent = "处理中...";
+    progressBar.value = 0;
+    percentText.textContent = "0%";
     trimBtn.disabled = true;
-    trimBtn.textContent = "裁剪中...";
-    trimBtn.classList.add("loading");
+    trimBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> 裁剪中...`;
     status.textContent = "";
 
     try {
+      // 读取设置中的默认分辨率
+      const resolution = await invoke<string | null>("get_default_resolution");
       const result = await invoke<string>("trim_video", {
         input: inputPath.value,
         output: outputPath.value,
         start: startTime.value,
         duration: duration.value,
+        resolution: resolution || null,
       });
       status.textContent = result;
       status.className = "text-sm mt-2 text-success";
@@ -112,7 +138,6 @@ export function renderHome(container: HTMLElement) {
     } finally {
       trimBtn.disabled = false;
       trimBtn.textContent = "开始裁剪";
-      trimBtn.classList.remove("loading");
     }
   });
 }
