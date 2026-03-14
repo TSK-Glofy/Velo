@@ -14,19 +14,23 @@ export function renderMerge(container: HTMLElement) {
     <h1 class="text-2xl font-bold mb-6">视频合并</h1>
 
     <div class="card bg-base-200/80 shadow-md mb-6">
-      <div class="card-body">
-        <label class="label">输入文件（按顺序合并）</label>
-        <div id="file-list" class="flex flex-col gap-2 mb-2"></div>
-        <button id="add-file-btn" class="btn btn-outline w-full">添加视频文件</button>
-
-        <label class="label mt-4">输出文件</label>
-        <div class="join w-full">
-          <input id="merge-output" type="text" class="input join-item flex-1"
-            placeholder="选择保存路径" readonly />
-          <button id="merge-output-btn" class="btn join-item">浏览</button>
+      <div class="card-body gap-4">
+        <div>
+          <label class="label">输入文件（按顺序合并）</label>
+          <div id="file-list" class="flex flex-col gap-2 mb-2"></div>
+          <button id="add-file-btn" class="btn btn-outline w-full">添加视频文件</button>
         </div>
 
-        <button id="merge-btn" class="btn btn-primary mt-6 w-full">开始合并</button>
+        <div>
+          <label class="label">输出文件</label>
+          <div class="join w-full">
+            <input id="merge-output" type="text" class="input join-item flex-1"
+              placeholder="选择保存路径" readonly />
+            <button id="merge-output-btn" class="btn join-item">浏览</button>
+          </div>
+        </div>
+
+        <button id="merge-btn" class="btn btn-primary w-full">开始合并</button>
         <p id="merge-status" class="text-sm mt-2"></p>
         <div id="merge-actions" class="hidden gap-2 mt-3">
           <button id="merge-play-btn" class="btn btn-outline flex-1">播放视频</button>

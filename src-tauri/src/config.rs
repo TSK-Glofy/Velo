@@ -10,6 +10,9 @@ pub struct AppConfig {
     pub background_image: Option<String>,
     pub default_resolution: Option<String>,
     pub window_size: Option<String>,
+    pub default_output_dir: Option<String>,
+    pub default_copy_mode: Option<bool>,
+    pub default_same_dir: Option<bool>,
 }
 
 /// 获取配置文件的存放路径: ~/.velo/config.json
@@ -115,6 +118,66 @@ pub fn set_window_size(size: String) -> Result<String, String> {
     } else {
         Some(size)
     };
+    save_config(&config)?;
+    Ok("保存成功".to_string())
+}
+
+/// 获取默认输出文件夹（未设置时返回 exe 同级目录）
+#[tauri::command]
+pub fn get_default_output_dir() -> String {
+    load_config()
+        .default_output_dir
+        .unwrap_or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| {
+                    // Windows extended-length 路径前缀 \\?\ 会导致 FFmpeg 无法识别
+                    let s = d.to_string_lossy().to_string();
+                    s.strip_prefix(r"\\?\").unwrap_or(&s).to_string()
+                }))
+                .unwrap_or_else(|| ".".to_string())
+        })
+}
+
+/// 保存默认输出文件夹
+#[tauri::command]
+pub fn set_default_output_dir(dir: String) -> Result<String, String> {
+    let mut config = load_config();
+    config.default_output_dir = if dir.is_empty() {
+        None
+    } else {
+        Some(dir)
+    };
+    save_config(&config)?;
+    Ok("保存成功".to_string())
+}
+
+/// 获取默认仅复制模式
+#[tauri::command]
+pub fn get_default_copy_mode() -> bool {
+    load_config().default_copy_mode.unwrap_or(false)
+}
+
+/// 保存默认仅复制模式
+#[tauri::command]
+pub fn set_default_copy_mode(enabled: bool) -> Result<String, String> {
+    let mut config = load_config();
+    config.default_copy_mode = Some(enabled);
+    save_config(&config)?;
+    Ok("保存成功".to_string())
+}
+
+/// 获取默认输出到原目录
+#[tauri::command]
+pub fn get_default_same_dir() -> bool {
+    load_config().default_same_dir.unwrap_or(true)
+}
+
+/// 保存默认输出到原目录
+#[tauri::command]
+pub fn set_default_same_dir(enabled: bool) -> Result<String, String> {
+    let mut config = load_config();
+    config.default_same_dir = Some(enabled);
     save_config(&config)?;
     Ok("保存成功".to_string())
 }

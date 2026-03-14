@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::config;
 
-/// 执行视频裁剪，实时将 ffmpeg 输出通过事件推送给前端
+/// 执行视频截取，实时将 ffmpeg 输出通过事件推送给前端
 #[tauri::command]
 pub async fn trim_video(
     app: AppHandle,
@@ -16,6 +16,8 @@ pub async fn trim_video(
     duration: String,
     resolution: Option<String>,
     framerate: Option<String>,
+    codec_mode: Option<String>,
+    rotation: Option<String>,
 ) -> Result<String, String> {
     let ffmpeg_path = config::load_config()
         .ffmpeg_path
@@ -25,22 +27,41 @@ pub async fn trim_video(
 
     std::thread::spawn(move || {
         let total_us = parse_duration_us(&duration).unwrap_or(0);
+        let is_copy = codec_mode.as_deref() == Some("copy");
 
         let mut args = vec!["-ss".to_string(), start, "-t".to_string(), duration, "-i".to_string(), input];
-        if let Some(res) = resolution {
-            if !res.is_empty() {
-                let filter = format!("scale={}", res.replace('x', ":"));
-                args.extend_from_slice(&["-vf".to_string(), filter]);
+
+        if is_copy {
+            // 仅复制模式：不重新编码，忽略分辨率、帧率、旋转设置
+            args.extend_from_slice(&["-c".to_string(), "copy".to_string()]);
+        } else {
+            // 重新编码模式：组合视频滤镜
+            let mut filters: Vec<String> = Vec::new();
+            if let Some(ref res) = resolution {
+                if !res.is_empty() {
+                    filters.push(format!("scale={}", res.replace('x', ":")));
+                }
             }
-        }
-        if let Some(fps) = framerate {
-            if !fps.is_empty() {
-                args.extend_from_slice(&["-r".to_string(), fps]);
+            if let Some(ref rot) = rotation {
+                match rot.as_str() {
+                    "right" => filters.push("transpose=1".to_string()),
+                    "left" => filters.push("transpose=2".to_string()),
+                    "180" => filters.push("hflip,vflip".to_string()),
+                    _ => {}
+                }
+            }
+            if !filters.is_empty() {
+                args.extend_from_slice(&["-vf".to_string(), filters.join(",")]);
+            }
+            if let Some(fps) = framerate {
+                if !fps.is_empty() {
+                    args.extend_from_slice(&["-r".to_string(), fps]);
+                }
             }
         }
         args.extend_from_slice(&["-progress".to_string(), "pipe:1".to_string(), "-y".to_string(), output]);
 
-        let result = run_ffmpeg_cmd(&app, &ffmpeg_path, &args, total_us, "裁剪完成");
+        let result = run_ffmpeg_cmd(&app, &ffmpeg_path, &args, total_us, "截取完成");
         let _ = tx.send(result);
     });
 

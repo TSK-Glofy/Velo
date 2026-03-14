@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open, save, ask } from "@tauri-apps/plugin-dialog";
+import { open, ask } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 // 模块级缓存：页面切换时保留用户输入，关闭程序自动释放
@@ -19,32 +19,34 @@ function parsePath(fullPath: string) {
 }
 
 /**
- * 渲染主页：视频裁剪界面
+ * 渲染主页：视频截取界面
  */
-export function renderHome(container: HTMLElement) {
+export async function renderHome(container: HTMLElement) {
   container.innerHTML = `
-    <h1 class="text-2xl font-bold mb-6">视频裁剪</h1>
+    <h1 class="text-2xl font-bold mb-6">视频截取</h1>
 
     <div class="card bg-base-200/80 shadow-md mb-6">
-      <div class="card-body">
-        <label class="label">输入文件</label>
-        <div class="join w-full">
-          <input id="input-path" type="text" class="input join-item flex-1"
-            placeholder="选择视频文件" readonly />
-          <button id="input-btn" class="btn join-item">浏览</button>
+      <div class="card-body gap-4">
+        <div>
+          <label class="label">输入文件</label>
+          <div class="join w-full">
+            <input id="input-path" type="text" class="input join-item flex-1"
+              placeholder="选择视频文件" readonly />
+            <button id="input-btn" class="btn join-item">浏览</button>
+          </div>
         </div>
 
-        <div class="grid grid-cols-3 gap-4 mt-4">
+        <div class="grid grid-cols-4 gap-4">
           <div>
-            <label class="label" for="start-time">起始时间 (-ss)</label>
-            <input id="start-time" type="text" class="input w-full" placeholder="00:00:00" />
+            <label class="label">起始时间 (-ss)</label>
+            <input id="start-time" type="text" class="input w-full" autocomplete="off" placeholder="00:00:00" />
           </div>
           <div>
-            <label class="label" for="duration">持续时间 (-t)</label>
-            <input id="duration" type="text" class="input w-full" placeholder="00:00:10" />
+            <label class="label">持续时间 (-t)</label>
+            <input id="duration" type="text" class="input w-full" autocomplete="off" placeholder="00:00:10" />
           </div>
           <div>
-            <label class="label" for="framerate">帧率 (-r)</label>
+            <label class="label">帧率 (-r)</label>
             <select id="framerate" class="select w-full">
               <option value="">原始</option>
               <option value="15">15</option>
@@ -54,33 +56,51 @@ export function renderHome(container: HTMLElement) {
               <option value="120">120</option>
             </select>
           </div>
-        </div>
-
-        <div class="mt-4">
-          <label class="label cursor-pointer justify-start gap-2">
-            <input id="same-dir" type="checkbox" class="checkbox checkbox-sm" />
-            <span>输出到原目录</span>
-          </label>
-        </div>
-
-        <!-- 勾选时：显示文件名输入框 -->
-        <div id="output-samedir" class="hidden mt-2">
-          <label class="label">输出文件名</label>
-          <input id="output-name" type="text" class="input w-full"
-            placeholder="输入文件名（含扩展名）" />
-        </div>
-
-        <!-- 未勾选时：显示浏览选择路径 -->
-        <div id="output-browse" class="mt-2">
-          <label class="label">输出文件</label>
-          <div class="join w-full">
-            <input id="output-path" type="text" class="input join-item flex-1"
-              placeholder="选择保存路径" readonly />
-            <button id="output-btn" class="btn join-item">浏览</button>
+          <div>
+            <label class="label">旋转</label>
+            <select id="rotation" class="select w-full">
+              <option value="">不旋转</option>
+              <option value="left">向左 90°</option>
+              <option value="right">向右 90°</option>
+              <option value="180">180°</option>
+            </select>
           </div>
         </div>
 
-        <button id="trim-btn" class="btn btn-primary mt-6 w-full">开始裁剪</button>
+        <div class="grid grid-cols-3 gap-4">
+          <div>
+            <label class="label">输出文件名</label>
+            <input id="output-name" type="text" class="input w-full"
+              placeholder="video-new.mp4" />
+          </div>
+          <div>
+            <label class="label">输出格式</label>
+            <select id="output-format" class="select w-full">
+              <option value="">与源文件相同</option>
+              <option value="mp4">MP4 (.mp4)</option>
+              <option value="mkv">MKV (.mkv)</option>
+              <option value="avi">AVI (.avi)</option>
+              <option value="mov">MOV (.mov)</option>
+              <option value="webm">WebM (.webm)</option>
+              <option value="flv">FLV (.flv)</option>
+              <option value="ts">MPEG-TS (.ts)</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">编码</label>
+            <label class="flex items-center gap-2 h-12 cursor-pointer">
+              <input id="copy-mode" type="checkbox" class="checkbox" />
+              <span class="text-sm">仅复制（不重新编码）</span>
+            </label>
+          </div>
+        </div>
+
+        <label class="flex items-center gap-2 cursor-pointer">
+          <input id="same-dir" type="checkbox" class="checkbox checkbox-sm" />
+          <span>输出到原目录（否则使用默认输出文件夹）</span>
+        </label>
+
+        <button id="trim-btn" class="btn btn-primary mt-2 w-full">开始截取</button>
         <p id="trim-status" class="text-sm mt-2"></p>
         <div id="trim-actions" class="hidden gap-2 mt-3">
           <button id="play-btn" class="btn btn-outline flex-1">播放视频</button>
@@ -110,14 +130,14 @@ export function renderHome(container: HTMLElement) {
   `;
 
   const inputPath = container.querySelector("#input-path") as HTMLInputElement;
-  const outputPath = container.querySelector("#output-path") as HTMLInputElement;
   const outputName = container.querySelector("#output-name") as HTMLInputElement;
   const sameDirCheck = container.querySelector("#same-dir") as HTMLInputElement;
-  const outputSameDir = container.querySelector("#output-samedir")!;
-  const outputBrowse = container.querySelector("#output-browse")!;
   const startTime = container.querySelector("#start-time") as HTMLInputElement;
   const duration = container.querySelector("#duration") as HTMLInputElement;
   const framerate = container.querySelector("#framerate") as HTMLSelectElement;
+  const outputFormat = container.querySelector("#output-format") as HTMLSelectElement;
+  const copyMode = container.querySelector("#copy-mode") as HTMLInputElement;
+  const rotation = container.querySelector("#rotation") as HTMLSelectElement;
   const trimBtn = container.querySelector("#trim-btn") as HTMLButtonElement;
   const status = container.querySelector("#trim-status")!;
   const trimInfo = container.querySelector("#trim-info")!;
@@ -145,48 +165,80 @@ export function renderHome(container: HTMLElement) {
     });
   });
 
-  // 切换输出模式：勾选/取消勾选
-  function toggleOutputMode() {
-    if (sameDirCheck.checked) {
-      outputSameDir.classList.remove("hidden");
-      outputBrowse.classList.add("hidden");
-      // 自动生成默认文件名
-      if (inputPath.value && !outputName.value) {
-        const { name, ext } = parsePath(inputPath.value);
-        outputName.value = `${name}-new${ext}`;
-        cache[outputName.id] = outputName.value;
-      }
+  /** 根据输出格式选择确定扩展名 */
+  function getOutputExt(): string {
+    if (outputFormat.value) {
+      return `.${outputFormat.value}`;
+    }
+    if (inputPath.value) {
+      return parsePath(inputPath.value).ext;
+    }
+    return ".mp4";
+  }
+
+  // 更新 placeholder 提示文字
+  function updatePlaceholder() {
+    const ext = getOutputExt();
+    if (inputPath.value) {
+      const { name } = parsePath(inputPath.value);
+      outputName.placeholder = `${name}-new${ext}`;
     } else {
-      outputSameDir.classList.add("hidden");
-      outputBrowse.classList.remove("hidden");
+      outputName.placeholder = `video-new${ext}`;
     }
   }
 
-  sameDirCheck.addEventListener("change", toggleOutputMode);
+  // 切换「仅复制」勾选框：勾选时禁用输出格式（灰色不可选）
+  function toggleCopyMode() {
+    if (copyMode.checked) {
+      outputFormat.disabled = true;
+      outputFormat.value = "";
+      cache[outputFormat.id] = "";
+      outputFormat.classList.add("opacity-50");
+    } else {
+      outputFormat.disabled = false;
+      outputFormat.classList.remove("opacity-50");
+    }
+  }
+
+  copyMode.addEventListener("change", () => {
+    toggleCopyMode();
+    updatePlaceholder();
+  });
+  outputFormat.addEventListener("change", () => {
+    updatePlaceholder();
+  });
+
+  // 首次加载时从设置读取默认值（缓存优先）
+  if (!cache["copy-mode"]) {
+    const defaultCopy = await invoke<boolean>("get_default_copy_mode");
+    copyMode.checked = defaultCopy;
+  }
+  if (!cache["same-dir"]) {
+    const defaultSameDir = await invoke<boolean>("get_default_same_dir");
+    sameDirCheck.checked = defaultSameDir;
+  }
+
   // 恢复缓存后立即同步 UI 状态
-  toggleOutputMode();
-
-  // 选择输入文件时，如果已勾选原目录，自动更新默认文件名
-  function updateDefaultName() {
-    if (sameDirCheck.checked && inputPath.value) {
-      const { name, ext } = parsePath(inputPath.value);
-      outputName.value = `${name}-new${ext}`;
-      cache[outputName.id] = outputName.value;
-    }
-  }
+  toggleCopyMode();
+  updatePlaceholder();
 
   /** 根据当前模式计算最终输出路径 */
-  function getOutputPath(): string {
-    if (sameDirCheck.checked) {
+  async function getOutputPath(): Promise<string> {
+    const filename = outputName.value || outputName.placeholder;
+    if (sameDirCheck.checked && inputPath.value) {
       const { dir, sep } = parsePath(inputPath.value);
-      return `${dir}${sep}${outputName.value}`;
+      return `${dir}${sep}${filename}`;
     }
-    return outputPath.value;
+    // 使用默认输出文件夹
+    const defaultDir = await invoke<string | null>("get_default_output_dir");
+    const dir = defaultDir || ".";
+    const sep = dir.includes("\\") ? "\\" : "/";
+    return `${dir}${sep}${filename}`;
   }
 
   // 播放输出视频
   playBtn.addEventListener("click", async () => {
-    const out = getOutputPath();
+    const out = await getOutputPath();
     if (out) {
       try {
         await openPath(out);
@@ -199,7 +251,7 @@ export function renderHome(container: HTMLElement) {
 
   // 在文件管理器中显示输出文件
   revealBtn.addEventListener("click", async () => {
-    const out = getOutputPath();
+    const out = await getOutputPath();
     if (out) {
       try {
         await revealItemInDir(out);
@@ -218,18 +270,7 @@ export function renderHome(container: HTMLElement) {
     if (selected) {
       inputPath.value = selected as string;
       cache[inputPath.id] = inputPath.value;
-      updateDefaultName();
-    }
-  });
-
-  // 选择输出保存路径
-  container.querySelector("#output-btn")!.addEventListener("click", async () => {
-    const selected = await save({
-      filters: [{ name: "视频文件", extensions: ["mp4", "mkv", "avi"] }],
-    });
-    if (selected) {
-      outputPath.value = selected as string;
-      cache[outputPath.id] = outputPath.value;
+      updatePlaceholder();
     }
   });
 
@@ -245,9 +286,9 @@ export function renderHome(container: HTMLElement) {
     percentText.textContent = `${pct}%`;
   });
 
-  // 开始裁剪
+  // 开始截取
   trimBtn.addEventListener("click", async () => {
-    const finalOutput = getOutputPath();
+    const finalOutput = await getOutputPath();
 
     if (!inputPath.value || !finalOutput || !startTime.value || !duration.value) {
       status.textContent = "请填写所有字段";
@@ -255,11 +296,6 @@ export function renderHome(container: HTMLElement) {
       return;
     }
 
-    if (sameDirCheck.checked && !outputName.value) {
-      status.textContent = "请输入输出文件名";
-      status.className = "text-sm mt-2 text-warning";
-      return;
-    }
 
     // 检查文件是否已存在
     const exists = await invoke<boolean>("check_file_exists", { path: finalOutput });
@@ -278,7 +314,8 @@ export function renderHome(container: HTMLElement) {
     progressBar.value = 0;
     percentText.textContent = "0%";
     trimBtn.disabled = true;
-    trimBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> 裁剪中...`;
+    sameDirCheck.disabled = true;
+    trimBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> 截取中...`;
     status.textContent = "";
 
     try {
@@ -291,6 +328,8 @@ export function renderHome(container: HTMLElement) {
         duration: duration.value,
         resolution: resolution || null,
         framerate: framerate.value || null,
+        codecMode: copyMode.checked ? "copy" : "reencode",
+        rotation: rotation.value || null,
       });
       status.textContent = result;
       status.className = "text-sm mt-2 text-success";
@@ -301,7 +340,8 @@ export function renderHome(container: HTMLElement) {
       status.className = "text-sm mt-2 text-error";
     } finally {
       trimBtn.disabled = false;
-      trimBtn.textContent = "开始裁剪";
+      sameDirCheck.disabled = false;
+      trimBtn.textContent = "开始截取";
     }
   });
 }

@@ -14,6 +14,9 @@ export async function renderSettings(container: HTMLElement) {
   const currentBg = await invoke<string | null>("get_background_image");
   const currentRes = await invoke<string | null>("get_default_resolution");
   const currentWinSize = await invoke<string | null>("get_window_size");
+  const currentOutputDir = await invoke<string>("get_default_output_dir");
+  const currentCopyMode = await invoke<boolean>("get_default_copy_mode");
+  const currentSameDir = await invoke<boolean>("get_default_same_dir");
 
   container.innerHTML = `
     <h1 class="text-2xl font-bold mb-6">设置</h1>
@@ -35,20 +38,8 @@ export async function renderSettings(container: HTMLElement) {
 
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
-            <h2 class="card-title text-lg">自定义背景</h2>
-            <p id="bg-current" class="text-sm opacity-70 mb-2">当前: ${currentBg || "未设置"}</p>
-            <div class="flex gap-2">
-              <button id="bg-browse" class="btn">选择图片</button>
-              <button id="bg-clear" class="btn btn-outline">清除背景</button>
-            </div>
-            <div id="bg-msg" class="text-sm mt-1"></div>
-          </div>
-        </div>
-
-        <div class="card bg-base-200/80 shadow-md mb-6">
-          <div class="card-body">
             <h2 class="card-title text-lg">默认输出分辨率</h2>
-            <p class="text-sm opacity-70 mb-2">裁剪时默认使用的分辨率，选择"原始"则不缩放</p>
+            <p class="text-sm opacity-70 mb-2">截取时默认使用的分辨率，选择"原始"则不缩放</p>
             <select id="resolution-select" class="select w-full">
               <option value="">原始（不缩放）</option>
               <option value="1920x1080">1920x1080 (1080p)</option>
@@ -58,6 +49,35 @@ export async function renderSettings(container: HTMLElement) {
               <option value="640x360">640x360 (360p)</option>
             </select>
             <div id="res-msg" class="text-sm mt-1"></div>
+          </div>
+        </div>
+
+        <div class="card bg-base-200/80 shadow-md mb-6">
+          <div class="card-body">
+            <h2 class="card-title text-lg">默认输出文件夹</h2>
+            <p class="text-sm opacity-70 mb-2">截取时未勾选"输出到原目录"将保存到此文件夹</p>
+            <div class="join w-full">
+              <input id="output-dir-path" type="text" class="input join-item flex-1"
+                placeholder="默认输出文件夹" readonly value="${currentOutputDir || ""}" />
+              <button id="output-dir-browse" class="btn join-item">浏览</button>
+            </div>
+            <div id="output-dir-msg" class="text-sm mt-1"></div>
+          </div>
+        </div>
+
+        <div class="card bg-base-200/80 shadow-md mb-6">
+          <div class="card-body">
+            <h2 class="card-title text-lg">默认选项</h2>
+            <p class="text-sm opacity-70 mb-2">截取页面的默认勾选状态</p>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input id="default-copy-mode" type="checkbox" class="checkbox" ${currentCopyMode ? "checked" : ""} />
+              <span>仅复制（不重新编码）</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input id="default-same-dir" type="checkbox" class="checkbox" ${currentSameDir ? "checked" : ""} />
+              <span>输出到原目录</span>
+            </label>
+            <div id="defaults-msg" class="text-sm mt-1"></div>
           </div>
         </div>
 
@@ -75,6 +95,18 @@ export async function renderSettings(container: HTMLElement) {
             <div id="winsize-msg" class="text-sm mt-1"></div>
           </div>
         </div>
+
+        <div class="card bg-base-200/80 shadow-md mb-6">
+          <div class="card-body">
+            <h2 class="card-title text-lg">自定义背景</h2>
+            <p id="bg-current" class="text-sm opacity-70 mb-2">当前: ${currentBg || "未设置"}</p>
+            <div class="flex gap-2">
+              <button id="bg-browse" class="btn">选择图片</button>
+              <button id="bg-clear" class="btn btn-outline">清除背景</button>
+            </div>
+            <div id="bg-msg" class="text-sm mt-1"></div>
+          </div>
+        </div>
       </div>
 
       <!-- 右栏：关于 -->
@@ -86,7 +118,7 @@ export async function renderSettings(container: HTMLElement) {
               <img src="/icon.png" alt="Velo" class="w-16 h-16 rounded-xl shrink-0" />
               <div>
                 <h3 class="text-lg font-bold">Velo</h3>
-                <p class="text-sm opacity-70">v0.7.0</p>
+                <p class="text-sm opacity-70">v0.8.0</p>
                 <p class="text-sm opacity-70">TSK-Glofy</p>
               </div>
             </div>
@@ -133,6 +165,52 @@ export async function renderSettings(container: HTMLElement) {
     } catch (e) {
       winSizeMsg.textContent = `保存失败: ${e}`;
       winSizeMsg.className = "text-sm mt-1 text-error";
+    }
+  });
+
+  // 默认输出文件夹
+  const outputDirInput = container.querySelector("#output-dir-path") as HTMLInputElement;
+  const outputDirMsg = container.querySelector("#output-dir-msg")!;
+
+  container.querySelector("#output-dir-browse")!.addEventListener("click", async () => {
+    const selected = await open({ directory: true });
+    if (selected) {
+      try {
+        await invoke("set_default_output_dir", { dir: selected as string });
+        outputDirInput.value = selected as string;
+        outputDirMsg.textContent = "已保存";
+        outputDirMsg.className = "text-sm mt-1 text-success";
+      } catch (e) {
+        outputDirMsg.textContent = `保存失败: ${e}`;
+        outputDirMsg.className = "text-sm mt-1 text-error";
+      }
+    }
+  });
+
+  // 默认选项
+  const defaultsMsg = container.querySelector("#defaults-msg")!;
+  const defaultCopyCheck = container.querySelector("#default-copy-mode") as HTMLInputElement;
+  const defaultSameDirCheck = container.querySelector("#default-same-dir") as HTMLInputElement;
+
+  defaultCopyCheck.addEventListener("change", async () => {
+    try {
+      await invoke("set_default_copy_mode", { enabled: defaultCopyCheck.checked });
+      defaultsMsg.textContent = "已保存";
+      defaultsMsg.className = "text-sm mt-1 text-success";
+    } catch (e) {
+      defaultsMsg.textContent = `保存失败: ${e}`;
+      defaultsMsg.className = "text-sm mt-1 text-error";
+    }
+  });
+
+  defaultSameDirCheck.addEventListener("change", async () => {
+    try {
+      await invoke("set_default_same_dir", { enabled: defaultSameDirCheck.checked });
+      defaultsMsg.textContent = "已保存";
+      defaultsMsg.className = "text-sm mt-1 text-success";
+    } catch (e) {
+      defaultsMsg.textContent = `保存失败: ${e}`;
+      defaultsMsg.className = "text-sm mt-1 text-error";
     }
   });
 

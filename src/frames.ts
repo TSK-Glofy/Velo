@@ -14,25 +14,27 @@ export function renderFrames(container: HTMLElement) {
     <h1 class="text-2xl font-bold mb-6">逐帧提取</h1>
 
     <div class="card bg-base-200/80 shadow-md mb-6">
-      <div class="card-body">
-        <label class="label">输入文件</label>
-        <div class="join w-full">
-          <input id="frames-input" type="text" class="input join-item flex-1"
-            placeholder="选择视频文件" readonly />
-          <button id="frames-input-btn" class="btn join-item">浏览</button>
+      <div class="card-body gap-4">
+        <div>
+          <label class="label">输入文件</label>
+          <div class="join w-full">
+            <input id="frames-input" type="text" class="input join-item flex-1"
+              placeholder="选择视频文件" readonly />
+            <button id="frames-input-btn" class="btn join-item">浏览</button>
+          </div>
         </div>
 
-        <div class="grid grid-cols-3 gap-4 mt-4">
+        <div class="grid grid-cols-3 gap-4">
           <div>
-            <label class="label" for="frames-start">起始时间 (-ss)</label>
-            <input id="frames-start" type="text" class="input w-full" placeholder="00:00:00" />
+            <label class="label">起始时间 (-ss)</label>
+            <input id="frames-start" type="text" class="input w-full" autocomplete="off" placeholder="00:00:00" />
           </div>
           <div>
-            <label class="label" for="frames-duration">持续时间 (-t)</label>
-            <input id="frames-duration" type="text" class="input w-full" placeholder="00:00:05" />
+            <label class="label">持续时间 (-t)</label>
+            <input id="frames-duration" type="text" class="input w-full" autocomplete="off" placeholder="00:00:05" />
           </div>
           <div>
-            <label class="label" for="frames-fps">提取帧率</label>
+            <label class="label">提取帧率</label>
             <select id="frames-fps" class="select w-full">
               <option value="">原始（全部帧）</option>
               <option value="1">1 fps</option>
@@ -45,9 +47,9 @@ export function renderFrames(container: HTMLElement) {
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4 mt-4">
+        <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="label" for="frames-format">输出格式</label>
+            <label class="label">输出格式</label>
             <select id="frames-format" class="select w-full">
               <option value="png">PNG</option>
               <option value="jpg">JPG</option>
@@ -64,7 +66,7 @@ export function renderFrames(container: HTMLElement) {
           </div>
         </div>
 
-        <button id="frames-btn" class="btn btn-primary mt-6 w-full">开始提取</button>
+        <button id="frames-btn" class="btn btn-primary w-full">开始提取</button>
         <p id="frames-status" class="text-sm mt-2"></p>
         <div id="frames-actions" class="hidden gap-2 mt-3">
           <button id="frames-reveal-btn" class="btn btn-outline flex-1">打开输出文件夹</button>

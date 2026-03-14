@@ -19,16 +19,48 @@ export async function applyBackground() {
   }
 }
 
+// 页面容器缓存：每个页面只初始化一次，切换时显示/隐藏
+const pageContainers: Record<string, HTMLElement> = {};
+const pageInitialized: Record<string, boolean> = {};
+
+/** 创建或获取页面容器 */
+function getPageContainer(page: string, content: HTMLElement): HTMLElement {
+  if (!pageContainers[page]) {
+    const div = document.createElement("div");
+    div.id = `page-${page}`;
+    div.style.display = "none";
+    content.appendChild(div);
+    pageContainers[page] = div;
+  }
+  return pageContainers[page];
+}
+
 /** 导航到指定页面 */
-function navigate(page: string, content: HTMLElement) {
-  if (page === "trim") {
-    renderHome(content);
-  } else if (page === "merge") {
-    renderMerge(content);
-  } else if (page === "frames") {
-    renderFrames(content);
-  } else if (page === "settings") {
-    renderSettings(content);
+async function navigate(page: string, content: HTMLElement) {
+  // 隐藏所有页面
+  for (const key of Object.keys(pageContainers)) {
+    pageContainers[key].style.display = "none";
+  }
+
+  const container = getPageContainer(page, content);
+  container.style.display = "block";
+
+  // 设置页每次都重新渲染（需要读取最新配置）
+  if (page === "settings") {
+    await renderSettings(container);
+    return;
+  }
+
+  // 其他页面只初始化一次
+  if (!pageInitialized[page]) {
+    pageInitialized[page] = true;
+    if (page === "trim") {
+      await renderHome(container);
+    } else if (page === "merge") {
+      renderMerge(container);
+    } else if (page === "frames") {
+      renderFrames(container);
+    }
   }
 }
 
@@ -55,11 +87,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     renderSetup(content, () => {
       sidebar.style.display = "flex";
       renderSidebar(sidebar, (page) => navigate(page, content));
-      renderHome(content);
+      navigate("trim", content);
     });
   } else {
     // 正常启动：渲染侧边栏 + 首页
     renderSidebar(sidebar, (page) => navigate(page, content));
-    renderHome(content);
+    await navigate("trim", content);
   }
 });

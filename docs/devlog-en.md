@@ -424,3 +424,103 @@ Added to `capabilities/default.json`:
 | `src-tauri/Cargo.toml` | `version = "0.7.0"` |
 | `src-tauri/tauri.conf.json` | `version: "0.7.0"` |
 | `src/settings.ts` | About card displays v0.7.0 |
+
+---
+
+# v0.8.0 — Output Format Conversion + Video Rotation + Default Output Folder + UI Consistency
+
+## Goal
+
+Add output format selection and video rotation to the trim page, introduce a "copy only (no re-encoding)" mode, add a default output folder setting, and unify spacing/layout across all pages.
+
+## New Features
+
+### Output Format Conversion (home.ts + ffmpeg.rs)
+
+Added an output format dropdown to the trim page, supporting conversion between MP4, MKV, AVI, MOV, WebM, FLV, and MPEG-TS:
+
+- FFmpeg automatically selects the container format based on the output file extension — no extra flags needed
+- Default option "Same as source" preserves the original format
+- The output filename placeholder dynamically updates its extension when the format changes
+
+### Copy-Only Mode (home.ts + ffmpeg.rs)
+
+The encoding section is now a checkbox labeled "Copy only (no re-encoding)":
+
+- When checked, uses FFmpeg's `-c copy` flag, skipping all decode/encode — extremely fast
+- When checked, the output format dropdown is greyed out and disabled (because `-c copy` remuxing depends on codec-container compatibility and can't be guaranteed)
+- When checked, resolution, framerate, and rotation settings are ignored (they require re-encoding)
+- Unchecked by default
+
+### Video Rotation (home.ts + ffmpeg.rs)
+
+The trim parameter row is expanded to a 4-column grid with a new rotation dropdown:
+
+- Left 90°: FFmpeg `-vf transpose=2`
+- Right 90°: FFmpeg `-vf transpose=1`
+- 180°: FFmpeg `-vf hflip,vflip`
+- Rotation filters are automatically merged with scale filters into a comma-separated `-vf` filter chain
+
+### Default Output Folder (config.rs + settings.ts + home.ts)
+
+A new "Default Output Folder" card is added to the settings page:
+
+- Defaults to the directory where the exe is located
+- When "Output to source directory" is unchecked, trimmed files are saved to this folder
+- Simplifies the output workflow from "browse and pick a path" to "filename + target folder"
+
+### Output Filename Refactoring (home.ts)
+
+The trim page output method changed from a save dialog to direct filename input:
+
+- The filename input is always visible, with a dynamic placeholder like `video-new.mp4`
+- When "Output to source directory" is checked, uses the source file's directory; otherwise uses the default output folder
+- Removed the "browse for save path" dialog
+
+## UI Fixes & Improvements
+
+### Consistent Spacing
+
+All pages (trim, merge, frame extraction) now use `gap-4` on card-body to control child element spacing:
+
+- Previously, the "Input file" label-to-input gap was controlled by label's own padding, while "Start time" etc. used `mt-4` — causing inconsistent spacing
+- Now each logical group is wrapped in a `<div>` (label + control), and card-body's `gap-4` ensures uniform spacing between groups
+
+### Settings Page Reordering
+
+Settings items reordered to a more logical sequence:
+
+1. FFmpeg Path
+2. Default Output Resolution
+3. Default Output Folder
+4. Window Size
+5. Custom Background
+
+### Trim Page Layout Adjustments
+
+- First parameter row expanded from 3 columns to 4 (start time, duration, framerate, rotation)
+- Second row: output filename, output format, encoding (left to right)
+- "Output to source directory" checkbox moved below the second row
+
+## Backend Changes
+
+### ffmpeg.rs
+
+- `trim_video` accepts new `rotation` and `codec_mode` parameters
+- In re-encode mode, the `-vf` filter chain supports merging multiple filters (scale + transpose/hflip/vflip)
+- In copy mode, all filters are skipped
+
+### config.rs
+
+- `AppConfig` gains a `default_output_dir: Option<String>` field
+- New `get_default_output_dir` / `set_default_output_dir` commands
+- Defaults to the exe's parent directory when unconfigured
+
+## Version Number Update
+
+| File | Field |
+|------|-------|
+| `package.json` | `version: "0.8.0"` |
+| `src-tauri/Cargo.toml` | `version = "0.8.0"` |
+| `src-tauri/tauri.conf.json` | `version: "0.8.0"` |
+| `src/settings.ts` | About card displays v0.8.0 |

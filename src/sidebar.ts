@@ -14,7 +14,7 @@ const ICONS = {
 
 // 导航项配置，后续新增页面只需在此添加
 const NAV_ITEMS: { page: Page; icon: string; label: string; position: "top" | "bottom" }[] = [
-  { page: "trim", icon: ICONS.trim, label: "视频裁剪", position: "top" },
+  { page: "trim", icon: ICONS.trim, label: "视频截取", position: "top" },
   { page: "merge", icon: ICONS.merge, label: "视频合并", position: "top" },
   { page: "frames", icon: ICONS.frames, label: "逐帧提取", position: "top" },
   { page: "settings", icon: ICONS.settings, label: "设置", position: "bottom" },
