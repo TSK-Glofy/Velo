@@ -524,3 +524,88 @@ Settings items reordered to a more logical sequence:
 | `src-tauri/Cargo.toml` | `version = "0.8.0"` |
 | `src-tauri/tauri.conf.json` | `version: "0.8.0"` |
 | `src/settings.ts` | About card displays v0.8.0 |
+
+---
+
+# v0.9.0 — Internationalization (i18n) + Page Caching
+
+## Goal
+
+Add Chinese/English bilingual support to Velo, allowing users to switch the interface language from the settings page. Also replace the page navigation mechanism from "destroy and rebuild" to "show/hide", fixing the issue where progress and input state were lost when switching pages.
+
+## New Features
+
+### Internationalization Framework (i18n.ts)
+
+New `src/i18n.ts` module implementing a lightweight frontend i18n solution:
+
+- Maintains Chinese (zh) and English (en) translation tables with 100+ translation keys
+- Provides three functions: `t(key)` to get translated text, `getLang()` to get the current language, `setLang(lang)` to set the language
+- Translation keys are namespaced by page (e.g., `trim.title`, `merge.start`, `settings.saved`) for clear organization
+
+### Language Selector (settings.ts + config.rs)
+
+New "Language" card at the top of the settings page:
+
+- Dropdown menu with "中文" and "English" options
+- Saves to backend config immediately on change, then auto-reloads the page after 300ms to apply the new language
+- On app startup, the saved language is read from `config.json` and initialized before rendering any UI
+
+### Page Caching Mechanism (main.ts)
+
+Changed page switching from "destroy DOM and re-render" to "show/hide" mode:
+
+- Each page (trim, merge, frames) gets its own `<div>` container, initialized only once
+- Switching pages only toggles `display: none / block` — DOM, event listeners, and progress state are all preserved
+- Settings page is the exception: re-renders every time to ensure the latest configuration is displayed
+- Fixes the previous issue where trim progress was lost and input fields were cleared when switching pages
+
+## Frontend File Changes
+
+All hardcoded Chinese strings in frontend files replaced with `t()` function calls:
+
+| File | Changes |
+|------|---------|
+| `i18n.ts` | New file — translation tables and language management functions |
+| `main.ts` | Loads saved language on startup; page container caching mechanism |
+| `sidebar.ts` | Navigation labels and menu text internationalized |
+| `home.ts` | All UI text on the trim page internationalized |
+| `merge.ts` | All UI text on the merge page internationalized |
+| `frames.ts` | All UI text on the frame extraction page internationalized |
+| `settings.ts` | Settings page internationalized + new language selector |
+| `setup.ts` | First-launch setup page internationalized |
+
+## Backend Changes
+
+### config.rs
+
+- `AppConfig` gains a `language: Option<String>` field
+- New `get_language` / `set_language` commands
+- Defaults to `"zh"` when unconfigured
+
+### lib.rs
+
+- Registers `get_language` and `set_language` commands
+
+## Design Decisions
+
+### Why Page Reload Instead of Dynamic Updates
+
+After a language switch, the app does a full `window.location.reload()` rather than updating DOM elements individually. Reasoning:
+
+1. All page HTML templates are generated via template literals in `renderXxx()` functions, with `t()` calls embedded in the templates
+2. Dynamic updates would require adding `id` attributes to every text node and replacing them one by one, dramatically increasing code complexity
+3. Language switching is a low-frequency operation — users won't switch often, and the 300ms reload delay is perfectly acceptable
+
+### Why Not a Third-Party i18n Library
+
+The project is small (7 page files) with ~100 translation entries. A simple `Record<Lang, Record<string, string>>` structure is more than sufficient. Pulling in i18next or similar libraries would add unnecessary dependencies and complexity.
+
+## Version Number Update
+
+| File | Field |
+|------|-------|
+| `package.json` | `version: "0.9.0"` |
+| `src-tauri/Cargo.toml` | `version = "0.9.0"` |
+| `src-tauri/tauri.conf.json` | `version: "0.9.0"` |
+| `src/settings.ts` | About card displays v0.9.0 |

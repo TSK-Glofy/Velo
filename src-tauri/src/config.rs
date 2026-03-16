@@ -13,6 +13,7 @@ pub struct AppConfig {
     pub default_output_dir: Option<String>,
     pub default_copy_mode: Option<bool>,
     pub default_same_dir: Option<bool>,
+    pub language: Option<String>,
 }
 
 /// 获取配置文件的存放路径: ~/.velo/config.json
@@ -180,6 +181,21 @@ pub fn set_default_same_dir(enabled: bool) -> Result<String, String> {
     config.default_same_dir = Some(enabled);
     save_config(&config)?;
     Ok("保存成功".to_string())
+}
+
+/// 获取语言设置
+#[tauri::command]
+pub fn get_language() -> String {
+    load_config().language.unwrap_or_else(|| "en".to_string())
+}
+
+/// 保存语言设置
+#[tauri::command]
+pub fn set_language(lang: String) -> Result<String, String> {
+    let mut config = load_config();
+    config.language = Some(lang);
+    save_config(&config)?;
+    Ok("OK".to_string())
 }
 
 /// 检查文件是否存在

@@ -1,23 +1,23 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { t } from "./i18n";
 
 /**
- * 首次启动引导页：设置 FFmpeg 路径
- * onComplete 回调：保存成功后通知 main.ts 切换到主界面
+ * First-time setup page: configure FFmpeg path
  */
 export function renderSetup(container: HTMLElement, onComplete: () => void) {
   container.innerHTML = `
     <div class="flex items-center justify-center h-full">
       <div class="card bg-base-200/90 shadow-xl w-96">
         <div class="card-body">
-          <h1 class="card-title text-2xl">欢迎使用 Velo</h1>
-          <p class="opacity-70">首次使用，请设置 FFmpeg 路径</p>
+          <h1 class="card-title text-2xl">${t("setup.welcome")}</h1>
+          <p class="opacity-70">${t("setup.hint")}</p>
           <div class="join w-full mt-4">
             <input id="ffmpeg-path" type="text" class="input join-item flex-1"
-              placeholder="ffmpeg.exe 路径" readonly />
-            <button id="browse-btn" class="btn join-item">浏览</button>
+              placeholder="${t("setup.ffmpegPlaceholder")}" readonly />
+            <button id="browse-btn" class="btn join-item">${t("setup.browse")}</button>
           </div>
-          <button id="save-btn" class="btn btn-primary mt-4 w-full">保存并继续</button>
+          <button id="save-btn" class="btn btn-primary mt-4 w-full">${t("setup.saveAndContinue")}</button>
           <p id="setup-msg" class="text-sm mt-2 text-error"></p>
         </div>
       </div>
@@ -39,14 +39,14 @@ export function renderSetup(container: HTMLElement, onComplete: () => void) {
     const path = pathInput.value;
     const msg = container.querySelector("#setup-msg")!;
     if (!path) {
-      msg.textContent = "请先选择 ffmpeg.exe";
+      msg.textContent = t("setup.selectFirst");
       return;
     }
     try {
       await invoke("set_ffmpeg_path", { path });
       onComplete();
     } catch (e) {
-      msg.textContent = `保存失败: ${e}`;
+      msg.textContent = `${t("setup.saveFailed")}${e}`;
     }
   });
 }

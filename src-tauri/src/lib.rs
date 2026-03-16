@@ -23,6 +23,8 @@ pub fn run() {
             config::set_default_copy_mode,
             config::get_default_same_dir,
             config::set_default_same_dir,
+            config::get_language,
+            config::set_language,
             config::check_file_exists,
             ffmpeg::trim_video,
             ffmpeg::merge_videos,

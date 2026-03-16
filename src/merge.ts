@@ -2,39 +2,40 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { t } from "./i18n";
 
-// 模块级缓存：页面切换时保留文件列表和输出路径
+// Module-level cache: preserves file list and output path across page switches
 const cache: { files: string[]; output: string } = { files: [], output: "" };
 
 /**
- * 渲染视频合并页面
+ * Render the video merge page
  */
 export function renderMerge(container: HTMLElement) {
   container.innerHTML = `
-    <h1 class="text-2xl font-bold mb-6">视频合并</h1>
+    <h1 class="text-2xl font-bold mb-6">${t("merge.title")}</h1>
 
     <div class="card bg-base-200/80 shadow-md mb-6">
       <div class="card-body gap-4">
         <div>
-          <label class="label">输入文件（按顺序合并）</label>
+          <label class="label">${t("merge.inputFiles")}</label>
           <div id="file-list" class="flex flex-col gap-2 mb-2"></div>
-          <button id="add-file-btn" class="btn btn-outline w-full">添加视频文件</button>
+          <button id="add-file-btn" class="btn btn-outline w-full">${t("merge.addFiles")}</button>
         </div>
 
         <div>
-          <label class="label">输出文件</label>
+          <label class="label">${t("merge.outputFile")}</label>
           <div class="join w-full">
             <input id="merge-output" type="text" class="input join-item flex-1"
-              placeholder="选择保存路径" readonly />
-            <button id="merge-output-btn" class="btn join-item">浏览</button>
+              placeholder="${t("merge.selectSavePath")}" readonly />
+            <button id="merge-output-btn" class="btn join-item">${t("merge.browse")}</button>
           </div>
         </div>
 
-        <button id="merge-btn" class="btn btn-primary w-full">开始合并</button>
+        <button id="merge-btn" class="btn btn-primary w-full">${t("merge.start")}</button>
         <p id="merge-status" class="text-sm mt-2"></p>
         <div id="merge-actions" class="hidden gap-2 mt-3">
-          <button id="merge-play-btn" class="btn btn-outline flex-1">播放视频</button>
-          <button id="merge-reveal-btn" class="btn btn-outline flex-1">打开输出文件夹</button>
+          <button id="merge-play-btn" class="btn btn-outline flex-1">${t("merge.playVideo")}</button>
+          <button id="merge-reveal-btn" class="btn btn-outline flex-1">${t("merge.openFolder")}</button>
         </div>
       </div>
     </div>
@@ -42,7 +43,7 @@ export function renderMerge(container: HTMLElement) {
     <div id="merge-info" class="hidden">
       <div class="card bg-base-200/80 shadow-md mb-6">
         <div class="card-body">
-          <label class="label">进度</label>
+          <label class="label">${t("merge.progress")}</label>
           <div class="flex items-center gap-3">
             <progress id="merge-progress" class="progress progress-primary flex-1" value="0" max="100"></progress>
             <span id="merge-percent" class="text-sm font-mono w-12 text-right">0%</span>
@@ -52,8 +53,8 @@ export function renderMerge(container: HTMLElement) {
 
       <div class="card bg-base-200/80 shadow-md">
         <div class="card-body">
-          <label class="label">FFmpeg 状态</label>
-          <p id="merge-ffmpeg-status" class="font-mono text-sm opacity-70">处理中...</p>
+          <label class="label">${t("merge.ffmpegStatus")}</label>
+          <p id="merge-ffmpeg-status" class="font-mono text-sm opacity-70">${t("merge.processing")}</p>
         </div>
       </div>
     </div>
@@ -69,11 +70,9 @@ export function renderMerge(container: HTMLElement) {
   const progressBar = container.querySelector("#merge-progress") as HTMLProgressElement;
   const percentText = container.querySelector("#merge-percent")!;
 
-  // 恢复缓存
   outputPath.value = cache.output;
   outputPath.addEventListener("input", () => { cache.output = outputPath.value; });
 
-  /** 渲染文件列表 */
   function renderFileList() {
     fileList.innerHTML = cache.files.map((f, i) => `
       <div class="flex items-center gap-2">
@@ -85,7 +84,6 @@ export function renderMerge(container: HTMLElement) {
       </div>
     `).join("");
 
-    // 上移
     fileList.querySelectorAll<HTMLButtonElement>(".move-up").forEach((btn) => {
       btn.addEventListener("click", () => {
         const idx = Number(btn.dataset.idx);
@@ -96,7 +94,6 @@ export function renderMerge(container: HTMLElement) {
       });
     });
 
-    // 下移
     fileList.querySelectorAll<HTMLButtonElement>(".move-down").forEach((btn) => {
       btn.addEventListener("click", () => {
         const idx = Number(btn.dataset.idx);
@@ -107,7 +104,6 @@ export function renderMerge(container: HTMLElement) {
       });
     });
 
-    // 删除
     fileList.querySelectorAll<HTMLButtonElement>(".remove-file").forEach((btn) => {
       btn.addEventListener("click", () => {
         cache.files.splice(Number(btn.dataset.idx), 1);
@@ -118,11 +114,10 @@ export function renderMerge(container: HTMLElement) {
 
   renderFileList();
 
-  // 添加文件
   container.querySelector("#add-file-btn")!.addEventListener("click", async () => {
     const selected = await open({
       multiple: true,
-      filters: [{ name: "视频文件", extensions: ["mp4", "mkv", "avi", "mov", "flv", "wmv", "webm", "ts"] }],
+      filters: [{ name: t("common.videoFiles"), extensions: ["mp4", "mkv", "avi", "mov", "flv", "wmv", "webm", "ts"] }],
     });
     if (selected) {
       const files = Array.isArray(selected) ? selected : [selected];
@@ -131,10 +126,9 @@ export function renderMerge(container: HTMLElement) {
     }
   });
 
-  // 选择输出路径
   container.querySelector("#merge-output-btn")!.addEventListener("click", async () => {
     const selected = await save({
-      filters: [{ name: "视频文件", extensions: ["mp4", "mkv", "avi"] }],
+      filters: [{ name: t("common.videoFiles"), extensions: ["mp4", "mkv", "avi"] }],
     });
     if (selected) {
       outputPath.value = selected as string;
@@ -142,31 +136,28 @@ export function renderMerge(container: HTMLElement) {
     }
   });
 
-  // 播放输出视频
   container.querySelector("#merge-play-btn")!.addEventListener("click", async () => {
     if (outputPath.value) {
       try {
         await openPath(outputPath.value);
       } catch (e) {
-        status.textContent = `播放失败: ${e}`;
+        status.textContent = `${t("merge.playFailed")}${e}`;
         status.className = "text-sm mt-2 text-error";
       }
     }
   });
 
-  // 打开输出文件夹
   container.querySelector("#merge-reveal-btn")!.addEventListener("click", async () => {
     if (outputPath.value) {
       try {
         await revealItemInDir(outputPath.value);
       } catch (e) {
-        status.textContent = `打开文件夹失败: ${e}`;
+        status.textContent = `${t("merge.openFolderFailed")}${e}`;
         status.className = "text-sm mt-2 text-error";
       }
     }
   });
 
-  // 监听合并相关事件
   listen<string>("ffmpeg-status", (event) => {
     statusLine.textContent = event.payload;
   });
@@ -176,15 +167,14 @@ export function renderMerge(container: HTMLElement) {
     percentText.textContent = `${pct}%`;
   });
 
-  // 开始合并
   mergeBtn.addEventListener("click", async () => {
     if (cache.files.length < 2) {
-      status.textContent = "请至少添加两个视频文件";
+      status.textContent = t("merge.needTwoFiles");
       status.className = "text-sm mt-2 text-warning";
       return;
     }
     if (!outputPath.value) {
-      status.textContent = "请选择输出文件路径";
+      status.textContent = t("merge.needOutputPath");
       status.className = "text-sm mt-2 text-warning";
       return;
     }
@@ -192,11 +182,11 @@ export function renderMerge(container: HTMLElement) {
     mergeActions.classList.add("hidden");
     mergeActions.classList.remove("flex");
     mergeInfo.classList.remove("hidden");
-    statusLine.textContent = "处理中...";
+    statusLine.textContent = t("merge.processing");
     progressBar.value = 0;
     percentText.textContent = "0%";
     mergeBtn.disabled = true;
-    mergeBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> 合并中...`;
+    mergeBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> ${t("merge.merging")}`;
     status.textContent = "";
 
     try {
@@ -209,11 +199,11 @@ export function renderMerge(container: HTMLElement) {
       mergeActions.classList.remove("hidden");
       mergeActions.classList.add("flex");
     } catch (e) {
-      status.textContent = `失败: ${e}`;
+      status.textContent = `${t("merge.failed")}${e}`;
       status.className = "text-sm mt-2 text-error";
     } finally {
       mergeBtn.disabled = false;
-      mergeBtn.textContent = "开始合并";
+      mergeBtn.textContent = t("merge.start");
     }
   });
 }

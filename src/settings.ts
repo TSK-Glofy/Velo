@@ -4,12 +4,12 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { applyBackground } from "./main";
+import { t, getLang } from "./i18n";
 
 /**
- * 渲染设置页面：FFmpeg 路径 + 背景图设置
+ * Render settings page
  */
 export async function renderSettings(container: HTMLElement) {
-  // 读取当前配置显示在输入框中
   const currentFfmpeg = await invoke<string | null>("get_ffmpeg_path");
   const currentBg = await invoke<string | null>("get_background_image");
   const currentRes = await invoke<string | null>("get_default_resolution");
@@ -17,20 +17,33 @@ export async function renderSettings(container: HTMLElement) {
   const currentOutputDir = await invoke<string>("get_default_output_dir");
   const currentCopyMode = await invoke<boolean>("get_default_copy_mode");
   const currentSameDir = await invoke<boolean>("get_default_same_dir");
+  const currentLang = getLang();
 
   container.innerHTML = `
-    <h1 class="text-2xl font-bold mb-6">设置</h1>
+    <h1 class="text-2xl font-bold mb-6">${t("settings.title")}</h1>
 
     <div class="flex gap-6">
-      <!-- 左栏：设置项 -->
+      <!-- Left column: settings -->
       <div class="flex-1 min-w-0">
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
-            <h2 class="card-title text-lg">FFmpeg 路径</h2>
+            <h2 class="card-title text-lg">${t("settings.language")}</h2>
+            <p class="text-sm opacity-70 mb-2">${t("settings.languageHint")}</p>
+            <select id="lang-select" class="select w-full">
+              <option value="zh" ${currentLang === "zh" ? "selected" : ""}>中文</option>
+              <option value="en" ${currentLang === "en" ? "selected" : ""}>English</option>
+            </select>
+            <div id="lang-msg" class="text-sm mt-1"></div>
+          </div>
+        </div>
+
+        <div class="card bg-base-200/80 shadow-md mb-6">
+          <div class="card-body">
+            <h2 class="card-title text-lg">${t("settings.ffmpegPath")}</h2>
             <div class="join w-full">
               <input id="ffmpeg-path" type="text" class="input join-item flex-1"
-                placeholder="ffmpeg.exe 路径" readonly value="${currentFfmpeg || ""}" />
-              <button id="ffmpeg-browse" class="btn join-item">浏览</button>
+                placeholder="${t("settings.ffmpegPlaceholder")}" readonly value="${currentFfmpeg || ""}" />
+              <button id="ffmpeg-browse" class="btn join-item">${t("settings.browse")}</button>
             </div>
             <div id="ffmpeg-msg" class="text-sm mt-1"></div>
           </div>
@@ -38,10 +51,10 @@ export async function renderSettings(container: HTMLElement) {
 
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
-            <h2 class="card-title text-lg">默认输出分辨率</h2>
-            <p class="text-sm opacity-70 mb-2">截取时默认使用的分辨率，选择"原始"则不缩放</p>
+            <h2 class="card-title text-lg">${t("settings.defaultResolution")}</h2>
+            <p class="text-sm opacity-70 mb-2">${t("settings.resolutionHint")}</p>
             <select id="resolution-select" class="select w-full">
-              <option value="">原始（不缩放）</option>
+              <option value="">${t("settings.resolutionOriginal")}</option>
               <option value="1920x1080">1920x1080 (1080p)</option>
               <option value="1600x900">1600x900</option>
               <option value="1280x720">1280x720 (720p)</option>
@@ -54,12 +67,12 @@ export async function renderSettings(container: HTMLElement) {
 
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
-            <h2 class="card-title text-lg">默认输出文件夹</h2>
-            <p class="text-sm opacity-70 mb-2">截取时未勾选"输出到原目录"将保存到此文件夹</p>
+            <h2 class="card-title text-lg">${t("settings.defaultOutputDir")}</h2>
+            <p class="text-sm opacity-70 mb-2">${t("settings.outputDirHint")}</p>
             <div class="join w-full">
               <input id="output-dir-path" type="text" class="input join-item flex-1"
-                placeholder="默认输出文件夹" readonly value="${currentOutputDir || ""}" />
-              <button id="output-dir-browse" class="btn join-item">浏览</button>
+                placeholder="${t("settings.outputDirPlaceholder")}" readonly value="${currentOutputDir || ""}" />
+              <button id="output-dir-browse" class="btn join-item">${t("settings.browse")}</button>
             </div>
             <div id="output-dir-msg" class="text-sm mt-1"></div>
           </div>
@@ -67,15 +80,15 @@ export async function renderSettings(container: HTMLElement) {
 
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
-            <h2 class="card-title text-lg">默认选项</h2>
-            <p class="text-sm opacity-70 mb-2">截取页面的默认勾选状态</p>
+            <h2 class="card-title text-lg">${t("settings.defaultOptions")}</h2>
+            <p class="text-sm opacity-70 mb-2">${t("settings.defaultOptionsHint")}</p>
             <label class="flex items-center gap-2 cursor-pointer">
               <input id="default-copy-mode" type="checkbox" class="checkbox" ${currentCopyMode ? "checked" : ""} />
-              <span>仅复制（不重新编码）</span>
+              <span>${t("settings.copyOnly")}</span>
             </label>
             <label class="flex items-center gap-2 cursor-pointer">
               <input id="default-same-dir" type="checkbox" class="checkbox" ${currentSameDir ? "checked" : ""} />
-              <span>输出到原目录</span>
+              <span>${t("settings.sameDir")}</span>
             </label>
             <div id="defaults-msg" class="text-sm mt-1"></div>
           </div>
@@ -83,10 +96,10 @@ export async function renderSettings(container: HTMLElement) {
 
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
-            <h2 class="card-title text-lg">窗口尺寸</h2>
-            <p class="text-sm opacity-70 mb-2">选择窗口大小，切换后立即生效</p>
+            <h2 class="card-title text-lg">${t("settings.windowSize")}</h2>
+            <p class="text-sm opacity-70 mb-2">${t("settings.windowSizeHint")}</p>
             <select id="winsize-select" class="select w-full">
-              <option value="">默认 (800x600)</option>
+              <option value="">${t("settings.windowSizeDefault")}</option>
               <option value="1600x900">1600x900</option>
               <option value="1280x720">1280x720</option>
               <option value="1024x768">1024x768</option>
@@ -98,27 +111,27 @@ export async function renderSettings(container: HTMLElement) {
 
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
-            <h2 class="card-title text-lg">自定义背景</h2>
-            <p id="bg-current" class="text-sm opacity-70 mb-2">当前: ${currentBg || "未设置"}</p>
+            <h2 class="card-title text-lg">${t("settings.customBackground")}</h2>
+            <p id="bg-current" class="text-sm opacity-70 mb-2">${t("settings.bgCurrent")}${currentBg || t("settings.bgNotSet")}</p>
             <div class="flex gap-2">
-              <button id="bg-browse" class="btn">选择图片</button>
-              <button id="bg-clear" class="btn btn-outline">清除背景</button>
+              <button id="bg-browse" class="btn">${t("settings.bgSelect")}</button>
+              <button id="bg-clear" class="btn btn-outline">${t("settings.bgClear")}</button>
             </div>
             <div id="bg-msg" class="text-sm mt-1"></div>
           </div>
         </div>
       </div>
 
-      <!-- 右栏：关于 -->
+      <!-- Right column: about -->
       <div class="w-64 shrink-0">
         <div class="card bg-base-200/80 shadow-md">
           <div class="card-body">
-            <h2 class="card-title text-lg mb-2">关于</h2>
+            <h2 class="card-title text-lg mb-2">${t("settings.about")}</h2>
             <div class="flex items-center gap-4 mb-4">
               <img src="/icon.png" alt="Velo" class="w-16 h-16 rounded-xl shrink-0" />
               <div>
                 <h3 class="text-lg font-bold">Velo</h3>
-                <p class="text-sm opacity-70">v0.8.0</p>
+                <p class="text-sm opacity-70">v0.9.0</p>
                 <p class="text-sm opacity-70">TSK-Glofy</p>
               </div>
             </div>
@@ -139,12 +152,10 @@ export async function renderSettings(container: HTMLElement) {
   const resSelect = container.querySelector("#resolution-select") as HTMLSelectElement;
   const resMsg = container.querySelector("#res-msg")!;
 
-  // 设置当前分辨率选中状态
   if (currentRes) {
     resSelect.value = currentRes;
   }
 
-  // 窗口尺寸相关
   const winSizeSelect = container.querySelector("#winsize-select") as HTMLSelectElement;
   const winSizeMsg = container.querySelector("#winsize-msg")!;
 
@@ -152,23 +163,38 @@ export async function renderSettings(container: HTMLElement) {
     winSizeSelect.value = currentWinSize;
   }
 
+  // Language switch — save and reload entire app to re-render all pages
+  const langSelect = container.querySelector("#lang-select") as HTMLSelectElement;
+  const langMsg = container.querySelector("#lang-msg")!;
+
+  langSelect.addEventListener("change", async () => {
+    try {
+      await invoke("set_language", { lang: langSelect.value });
+      langMsg.textContent = t("settings.saved");
+      langMsg.className = "text-sm mt-1 text-success";
+      // Reload the app to apply new language to all pages
+      setTimeout(() => window.location.reload(), 300);
+    } catch (e) {
+      langMsg.textContent = `${t("settings.saveFailed")}${e}`;
+      langMsg.className = "text-sm mt-1 text-error";
+    }
+  });
+
   winSizeSelect.addEventListener("change", async () => {
     try {
       await invoke("set_window_size", { size: winSizeSelect.value });
-      // 立即调整窗口大小
       const sizeStr = winSizeSelect.value || "800x600";
       const [w, h] = sizeStr.split("x").map(Number);
       const win = getCurrentWindow();
       await win.setSize(new LogicalSize(w, h));
-      winSizeMsg.textContent = "已保存";
+      winSizeMsg.textContent = t("settings.saved");
       winSizeMsg.className = "text-sm mt-1 text-success";
     } catch (e) {
-      winSizeMsg.textContent = `保存失败: ${e}`;
+      winSizeMsg.textContent = `${t("settings.saveFailed")}${e}`;
       winSizeMsg.className = "text-sm mt-1 text-error";
     }
   });
 
-  // 默认输出文件夹
   const outputDirInput = container.querySelector("#output-dir-path") as HTMLInputElement;
   const outputDirMsg = container.querySelector("#output-dir-msg")!;
 
@@ -178,16 +204,15 @@ export async function renderSettings(container: HTMLElement) {
       try {
         await invoke("set_default_output_dir", { dir: selected as string });
         outputDirInput.value = selected as string;
-        outputDirMsg.textContent = "已保存";
+        outputDirMsg.textContent = t("settings.saved");
         outputDirMsg.className = "text-sm mt-1 text-success";
       } catch (e) {
-        outputDirMsg.textContent = `保存失败: ${e}`;
+        outputDirMsg.textContent = `${t("settings.saveFailed")}${e}`;
         outputDirMsg.className = "text-sm mt-1 text-error";
       }
     }
   });
 
-  // 默认选项
   const defaultsMsg = container.querySelector("#defaults-msg")!;
   const defaultCopyCheck = container.querySelector("#default-copy-mode") as HTMLInputElement;
   const defaultSameDirCheck = container.querySelector("#default-same-dir") as HTMLInputElement;
@@ -195,10 +220,10 @@ export async function renderSettings(container: HTMLElement) {
   defaultCopyCheck.addEventListener("change", async () => {
     try {
       await invoke("set_default_copy_mode", { enabled: defaultCopyCheck.checked });
-      defaultsMsg.textContent = "已保存";
+      defaultsMsg.textContent = t("settings.saved");
       defaultsMsg.className = "text-sm mt-1 text-success";
     } catch (e) {
-      defaultsMsg.textContent = `保存失败: ${e}`;
+      defaultsMsg.textContent = `${t("settings.saveFailed")}${e}`;
       defaultsMsg.className = "text-sm mt-1 text-error";
     }
   });
@@ -206,27 +231,25 @@ export async function renderSettings(container: HTMLElement) {
   defaultSameDirCheck.addEventListener("change", async () => {
     try {
       await invoke("set_default_same_dir", { enabled: defaultSameDirCheck.checked });
-      defaultsMsg.textContent = "已保存";
+      defaultsMsg.textContent = t("settings.saved");
       defaultsMsg.className = "text-sm mt-1 text-success";
     } catch (e) {
-      defaultsMsg.textContent = `保存失败: ${e}`;
+      defaultsMsg.textContent = `${t("settings.saveFailed")}${e}`;
       defaultsMsg.className = "text-sm mt-1 text-error";
     }
   });
 
-  // 分辨率变更时自动保存
   resSelect.addEventListener("change", async () => {
     try {
       await invoke("set_default_resolution", { resolution: resSelect.value });
-      resMsg.textContent = "已保存";
+      resMsg.textContent = t("settings.saved");
       resMsg.className = "text-sm mt-1 text-success";
     } catch (e) {
-      resMsg.textContent = `保存失败: ${e}`;
+      resMsg.textContent = `${t("settings.saveFailed")}${e}`;
       resMsg.className = "text-sm mt-1 text-error";
     }
   });
 
-  // 浏览选择 ffmpeg
   container.querySelector("#ffmpeg-browse")!.addEventListener("click", async () => {
     const selected = await open({
       filters: [{ name: "FFmpeg", extensions: ["exe"] }],
@@ -235,49 +258,45 @@ export async function renderSettings(container: HTMLElement) {
       try {
         await invoke("set_ffmpeg_path", { path: selected as string });
         ffmpegInput.value = selected as string;
-        ffmpegMsg.textContent = "保存成功";
+        ffmpegMsg.textContent = t("settings.saveSuccess");
         ffmpegMsg.className = "text-sm mt-1 text-success";
       } catch (e) {
-        ffmpegMsg.textContent = `保存失败: ${e}`;
+        ffmpegMsg.textContent = `${t("settings.saveFailed")}${e}`;
         ffmpegMsg.className = "text-sm mt-1 text-error";
       }
     }
   });
 
-  // 浏览选择背景图
   container.querySelector("#bg-browse")!.addEventListener("click", async () => {
     const selected = await open({
-      filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"] }],
+      filters: [{ name: t("common.images"), extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"] }],
     });
     if (selected) {
       try {
         await invoke("set_background_image", { path: selected as string });
         await applyBackground();
-        bgCurrent.textContent = `当前: ${selected}`;
-        bgMsg.textContent = "背景已更新";
+        bgCurrent.textContent = `${t("settings.bgCurrent")}${selected}`;
+        bgMsg.textContent = t("settings.bgUpdated");
         bgMsg.className = "text-sm mt-1 text-success";
       } catch (e) {
-        bgMsg.textContent = `失败: ${e}`;
+        bgMsg.textContent = `${t("settings.failed")}${e}`;
         bgMsg.className = "text-sm mt-1 text-error";
       }
     }
   });
 
-  // 清除背景图
   container.querySelector("#bg-clear")!.addEventListener("click", async () => {
     try {
-      // 保存空路径来清除
       document.body.style.backgroundImage = "";
-      bgCurrent.textContent = "当前: 未设置";
-      bgMsg.textContent = "背景已清除";
+      bgCurrent.textContent = `${t("settings.bgCurrent")}${t("settings.bgNotSet")}`;
+      bgMsg.textContent = t("settings.bgCleared");
       bgMsg.className = "text-sm mt-1 text-success";
     } catch (e) {
-      bgMsg.textContent = `失败: ${e}`;
+      bgMsg.textContent = `${t("settings.failed")}${e}`;
       bgMsg.className = "text-sm mt-1 text-error";
     }
   });
 
-  // Github 链接
   container.querySelector("#github-link")!.addEventListener("click", (e) => {
     e.preventDefault();
     openUrl("https://github.com/TSK-Glofy/Velo");
