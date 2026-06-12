@@ -281,7 +281,7 @@ export async function renderHome(container: HTMLElement) {
   trimBtn.addEventListener("click", async () => {
     const finalOutput = await getOutputPath();
 
-    if (!inputPath.value || !finalOutput || !startTime.value || !duration.value) {
+    if (!inputPath.value || !finalOutput) {
       status.textContent = t("trim.fillAllFields");
       status.className = "text-sm mt-2 text-warning";
       return;
@@ -317,7 +317,7 @@ export async function renderHome(container: HTMLElement) {
         duration: duration.value,
         resolution: resolution || null,
         framerate: framerate.value || null,
-        codecMode: copyMode.checked ? "copy" : "reencode",
+        codec_mode: copyMode.checked ? "copy" : "reencode",
         rotation: rotation.value || null,
       });
       status.textContent = result;

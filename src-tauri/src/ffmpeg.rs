@@ -1,4 +1,5 @@
 use std::io::{BufRead, BufReader, Write};
+use std::path::Path;
 use std::process::{Command, Stdio};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -26,10 +27,37 @@ pub async fn trim_video(
     let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
 
     std::thread::spawn(move || {
-        let total_us = parse_duration_us(&duration).unwrap_or(0);
+        let effective_start = if start.trim().is_empty() {
+            "0".to_string()
+        } else {
+            start.trim().to_string()
+        };
+        let effective_duration = if duration.trim().is_empty() {
+            match probe_video_duration(&ffmpeg_path, &input) {
+                Ok(v) => {
+                    let detected_us = parse_duration_us(&v).unwrap_or(0);
+                    let start_us = parse_duration_us(&effective_start).unwrap_or(0);
+                    if detected_us > start_us && start_us > 0 {
+                        format!("{:.3}", (detected_us - start_us) as f64 / 1_000_000.0)
+                    } else {
+                        v
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(e));
+                    return;
+                }
+            }
+        } else {
+            duration.trim().to_string()
+        };
+        let total_us = parse_duration_us(&effective_duration).unwrap_or(0);
         let is_copy = codec_mode.as_deref() == Some("copy");
 
-        let mut args = vec!["-ss".to_string(), start, "-t".to_string(), duration, "-i".to_string(), input];
+        let mut args = Vec::new();
+        args.extend_from_slice(&["-ss".to_string(), effective_start]);
+        args.extend_from_slice(&["-t".to_string(), effective_duration]);
+        args.extend_from_slice(&["-i".to_string(), input]);
 
         if is_copy {
             // 仅复制模式：不重新编码，忽略分辨率、帧率、旋转设置
@@ -205,6 +233,97 @@ fn parse_duration_us(s: &str) -> Option<i64> {
     Some((seconds * 1_000_000.0) as i64)
 }
 
+fn probe_video_duration(ffmpeg_path: &str, input: &str) -> Result<String, String> {
+    if let Ok(d) = probe_duration_with_ffprobe(ffmpeg_path, input) {
+        return Ok(d);
+    }
+    probe_duration_with_ffmpeg(ffmpeg_path, input)
+}
+
+fn probe_duration_with_ffprobe(ffmpeg_path: &str, input: &str) -> Result<String, String> {
+    let ffprobe_path = ffprobe_path_from_ffmpeg(ffmpeg_path);
+    let output = Command::new(&ffprobe_path)
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=nokey=1:noprint_wrappers=1",
+            input,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to probe duration (ffprobe): {}", e))?;
+
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("ffprobe failed: {}", err));
+    }
+
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if raw.is_empty() {
+        return Err("ffprobe returned empty duration".to_string());
+    }
+    let secs: f64 = raw
+        .parse()
+        .map_err(|_| format!("Invalid ffprobe duration format: {}", raw))?;
+    if secs <= 0.0 {
+        return Err(format!("Invalid ffprobe duration value: {}", raw));
+    }
+    Ok(format!("{:.3}", secs))
+}
+
+fn probe_duration_with_ffmpeg(ffmpeg_path: &str, input: &str) -> Result<String, String> {
+    let output = Command::new(ffmpeg_path)
+        .args(["-i", input])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("Failed to probe duration (ffmpeg): {}", e))?;
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for line in stderr.lines() {
+        if let Some(idx) = line.find("Duration: ") {
+            let rest = &line[(idx + "Duration: ".len())..];
+            if let Some(end) = rest.find(',') {
+                let duration = rest[..end].trim();
+                if !duration.is_empty() && duration != "N/A" {
+                    return Ok(duration.to_string());
+                }
+            }
+        }
+    }
+    Err("Unable to detect video duration".to_string())
+}
+
+fn ffprobe_path_from_ffmpeg(ffmpeg_path: &str) -> String {
+    let path = Path::new(ffmpeg_path);
+    let parent = path.parent().unwrap_or_else(|| Path::new(""));
+    let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    let ffprobe_name = if ext.is_empty() { "ffprobe".to_string() } else { format!("ffprobe.{}", ext) };
+    parent.join(ffprobe_name).to_string_lossy().to_string()
+}
+
+/// Normalize FFmpeg progress timestamp to microseconds.
+/// Some FFmpeg builds emit `out_time_us`, some emit `out_time_ms`.
+fn normalize_progress_time_us(key: &str, raw: i64, total_us: i64) -> Option<i64> {
+    match key {
+        "out_time_us" => Some(raw),
+        "out_time_ms" => {
+            if total_us > 0 {
+                let total_ms = total_us / 1000;
+                // If value is close to total_ms scale, treat it as milliseconds.
+                if raw >= 0 && raw <= total_ms.saturating_add(1000) {
+                    return Some(raw.saturating_mul(1000));
+                }
+            }
+            // Fallback: treat as microseconds.
+            Some(raw)
+        }
+        _ => None,
+    }
+}
+
 /// 通用 FFmpeg 执行器：启动进程、解析 -progress 输出、推送事件
 fn run_ffmpeg_cmd(
     app: &AppHandle,
@@ -263,13 +382,15 @@ fn run_ffmpeg_cmd(
                             };
                         }
                         "total_size" => total_size = val.trim().to_string(),
-                        "out_time_us" => {
+                        "out_time_us" | "out_time_ms" => {
                             if total_us > 0 {
-                                if let Ok(current_us) = val.trim().parse::<i64>() {
-                                    let percent = ((current_us as f64 / total_us as f64) * 100.0)
-                                        .min(100.0)
-                                        .max(0.0);
-                                    let _ = app_clone.emit("ffmpeg-progress", percent);
+                                if let Ok(raw) = val.trim().parse::<i64>() {
+                                    if let Some(current_us) = normalize_progress_time_us(key, raw, total_us) {
+                                        let percent = ((current_us as f64 / total_us as f64) * 100.0)
+                                            .min(100.0)
+                                            .max(0.0);
+                                        let _ = app_clone.emit("ffmpeg-progress", percent);
+                                    }
                                 }
                             }
                         }
