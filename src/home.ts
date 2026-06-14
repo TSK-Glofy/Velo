@@ -2,46 +2,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, ask } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import {
+  configErrorMessage,
+  configInvoke,
+  errorDetail,
+  isConfigAccessError,
+} from "./configAccess";
 import { t } from "./i18n";
 
 // Module-level cache: preserves user input across page switches
 const cache: Record<string, string> = {};
-const CONFIG_ACCESS_SENTINEL = "VELO_CONFIG_ACCESS:";
-
-function getErrorDetail(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error ?? "");
-}
-
-function getConfigAccessMessage(error: unknown): string {
-  const detail = getErrorDetail(error).replace(CONFIG_ACCESS_SENTINEL, "");
-  return [
-    "Velo cannot read or create configuration in the installation folder.",
-    "Install Velo in a user-writable folder or fix folder permissions.",
-    "Velo 无法读取或创建安装目录中的配置。请将 Velo 安装到可写文件夹，或修复文件夹权限。",
-    detail,
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function toConfigAccessError(error: unknown): Error {
-  return new Error(`${CONFIG_ACCESS_SENTINEL}${getErrorDetail(error)}`);
-}
-
-function isConfigAccessError(error: unknown): boolean {
-  return error instanceof Error && error.message.startsWith(CONFIG_ACCESS_SENTINEL);
-}
-
-async function configInvoke<T>(command: string): Promise<T> {
-  try {
-    return await invoke<T>(command);
-  } catch (error) {
-    throw toConfigAccessError(error);
-  }
-}
 
 /** Extract directory, filename (without extension), and extension from a full path */
 function parsePath(fullPath: string) {
@@ -277,7 +247,7 @@ export async function renderHome(container: HTMLElement) {
       }
     } catch (e) {
       const message = isConfigAccessError(e)
-        ? getConfigAccessMessage(e)
+        ? `${configErrorMessage(e)} ${errorDetail(e)}`
         : `${t("trim.playFailed")}${e}`;
       status.textContent = message;
       status.className = "text-sm mt-2 text-error";
@@ -292,7 +262,7 @@ export async function renderHome(container: HTMLElement) {
       }
     } catch (e) {
       const message = isConfigAccessError(e)
-        ? getConfigAccessMessage(e)
+        ? `${configErrorMessage(e)} ${errorDetail(e)}`
         : `${t("trim.openFolderFailed")}${e}`;
       status.textContent = message;
       status.className = "text-sm mt-2 text-error";
@@ -368,7 +338,7 @@ export async function renderHome(container: HTMLElement) {
       trimActions.classList.add("flex");
     } catch (e) {
       const message = isConfigAccessError(e)
-        ? getConfigAccessMessage(e)
+        ? `${configErrorMessage(e)} ${errorDetail(e)}`
         : `${t("trim.failed")}${e}`;
       status.textContent = message;
       status.className = "text-sm mt-2 text-error";

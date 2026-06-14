@@ -1,5 +1,5 @@
 import "./styles.css";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { setLang, type Lang } from "./i18n";
@@ -9,23 +9,12 @@ import { renderMerge } from "./merge";
 import { renderSettings } from "./settings";
 import { renderFrames } from "./frames";
 import { renderSetup } from "./setup";
-
-const CONFIG_ACCESS_SENTINEL = "VELO_CONFIG_ACCESS:";
-const CONFIG_ACCESS_PATTERNS = [
-  "Failed to read config ",
-  "Failed to parse config ",
-  "Failed to read installer defaults ",
-  "Failed to parse installer defaults ",
-  "Unable to locate executable:",
-  "Executable path has no parent directory",
-];
-
-function getErrorDetail(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error ?? "");
-}
+import {
+  configErrorMessage,
+  configInvoke,
+  errorDetail,
+  isConfigAccessError,
+} from "./configAccess";
 
 function createErrorScreen(
   title: string,
@@ -63,43 +52,18 @@ function createErrorScreen(
   return wrapper;
 }
 
-function toConfigAccessError(error: unknown): Error {
-  return new Error(`${CONFIG_ACCESS_SENTINEL}${getErrorDetail(error)}`);
-}
-
-function isConfigAccessError(error: unknown): boolean {
-  if (error instanceof Error && error.message.startsWith(CONFIG_ACCESS_SENTINEL)) {
-    return true;
-  }
-
-  const detail = getErrorDetail(error);
-  return CONFIG_ACCESS_PATTERNS.some((pattern) => detail.includes(pattern));
-}
-
-async function configInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  try {
-    return await invoke<T>(command, args);
-  } catch (error) {
-    throw toConfigAccessError(error);
-  }
-}
-
 export function renderConfigError(container: HTMLElement, error: unknown) {
-  const detail = getErrorDetail(error).replace(CONFIG_ACCESS_SENTINEL, "") || "Unknown configuration access error.";
   container.replaceChildren(
     createErrorScreen(
       "Configuration Access Error",
-      [
-        "Velo cannot read or create configuration in the installation folder. Install Velo in a user-writable folder or fix folder permissions.",
-        "Velo 无法读取或创建安装目录中的配置。请将 Velo 安装到可写文件夹，或修复文件夹权限。",
-      ],
-      detail,
+      [configErrorMessage(error)],
+      errorDetail(error) || "Unknown configuration access error.",
     ),
   );
 }
 
 function renderFatalError(container: HTMLElement, error: unknown) {
-  const detail = getErrorDetail(error) || "Unknown fatal error.";
+  const detail = errorDetail(error) || "Unknown fatal error.";
   container.replaceChildren(
     createErrorScreen(
       "Velo Hit an Unexpected Error",
