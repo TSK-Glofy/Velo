@@ -49,11 +49,13 @@ pub fn jobs_file_from_root(root: &Path) -> PathBuf {
 }
 
 pub fn job_log_file_from_root(root: &Path, task_id: &str) -> PathBuf {
-    root.join("jobs").join("logs").join(format!("{task_id}.log"))
+    let safe_task_id = sanitize_task_id(task_id);
+    root.join("jobs").join("logs").join(format!("{safe_task_id}.log"))
 }
 
 pub fn preview_file_from_root(root: &Path, task_id: &str) -> PathBuf {
-    root.join("preview").join(format!("{task_id}.jpg"))
+    let safe_task_id = sanitize_task_id(task_id);
+    root.join("preview").join(format!("{safe_task_id}.jpg"))
 }
 
 pub fn background_dir_from_root(root: &Path) -> PathBuf {
@@ -84,13 +86,39 @@ fn has_forbidden_windows_components(_: &Path) -> bool {
 
 #[cfg(windows)]
 fn normalize_windows_exe_path(path: &Path) -> PathBuf {
-    let normalized = path.to_string_lossy();
-    normalized.strip_prefix(r"\\?\").map_or_else(|| path.to_path_buf(), PathBuf::from)
+    let normalized = path.to_string_lossy().replace('/', "\\");
+    normalized
+        .strip_prefix(r"\\?\")
+        .map(|rest| {
+            if let Some(unc) = rest.strip_prefix("UNC\\") {
+                PathBuf::from(format!(r"\\{unc}"))
+            } else {
+                PathBuf::from(rest)
+            }
+        })
+        .unwrap_or_else(|| path.to_path_buf())
 }
 
 #[cfg(not(windows))]
 fn normalize_windows_exe_path(path: &Path) -> PathBuf {
     path.to_path_buf()
+}
+
+fn sanitize_task_id(task_id: &str) -> String {
+    let mut safe = String::with_capacity(task_id.len());
+    for ch in task_id.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.') {
+            safe.push(ch);
+        } else {
+            safe.push('_');
+        }
+    }
+
+    if safe == "." || safe == ".." || safe.is_empty() {
+        safe.push('_');
+    }
+
+    safe
 }
 
 #[cfg(test)]
@@ -99,9 +127,17 @@ mod tests {
     use std::path::Path;
 
     #[test]
+    #[cfg(windows)]
     fn derives_app_root_from_exe_path() {
         let root = app_root_from_exe(Path::new(r"C:\Users\me\Velo\velo.exe")).unwrap();
         assert_eq!(root, Path::new(r"C:\Users\me\Velo"));
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn derives_app_root_from_exe_path() {
+        let root = app_root_from_exe(Path::new("/home/me/Velo/velo.exe")).unwrap();
+        assert_eq!(root, Path::new("/home/me/Velo"));
     }
 
     #[test]
@@ -152,5 +188,30 @@ mod tests {
     fn normalizes_extended_length_exe_paths() {
         let root = app_root_from_exe(Path::new(r"\\?\C:\Users\me\Velo\velo.exe")).unwrap();
         assert_eq!(root, Path::new(r"C:\Users\me\Velo"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn normalizes_extended_length_unc_exe_paths() {
+        let root = app_root_from_exe(Path::new(r"\\?\UNC\server\share\Velo\velo.exe")).unwrap();
+        assert_eq!(root, Path::new(r"\\server\share\Velo"));
+    }
+
+    #[test]
+    fn bad_task_ids_do_not_escape_log_or_preview_paths() {
+        let root = Path::new(r"D:\Apps\Velo");
+        let bad_task_ids = [r"..\outside", "nested/path", "task id"];
+
+    for task_id in bad_task_ids {
+            let log = job_log_file_from_root(root, task_id);
+            let preview = preview_file_from_root(root, task_id);
+            assert_eq!(log.parent(), Some(root.join("jobs").join("logs")).as_deref());
+            assert_eq!(preview.parent(), Some(root.join("preview")).as_deref());
+
+            let log_name = log.file_name().unwrap().to_string_lossy();
+            let preview_name = preview.file_name().unwrap().to_string_lossy();
+            assert!(!log_name.contains('\\') && !log_name.contains('/'));
+            assert!(!preview_name.contains('\\') && !preview_name.contains('/'));
+        }
     }
 }
