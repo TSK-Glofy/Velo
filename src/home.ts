@@ -6,9 +6,17 @@ import { t } from "./i18n";
 
 // Module-level cache: preserves user input across page switches
 const cache: Record<string, string> = {};
+const CONFIG_ACCESS_SENTINEL = "VELO_CONFIG_ACCESS:";
+
+function getErrorDetail(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error ?? "");
+}
 
 function getConfigAccessMessage(error: unknown): string {
-  const detail = error instanceof Error ? error.message : String(error ?? "");
+  const detail = getErrorDetail(error).replace(CONFIG_ACCESS_SENTINEL, "");
   return [
     "Velo cannot read or create configuration in the installation folder.",
     "Install Velo in a user-writable folder or fix folder permissions.",
@@ -20,12 +28,19 @@ function getConfigAccessMessage(error: unknown): string {
 }
 
 function toConfigAccessError(error: unknown): Error {
-  const detail = error instanceof Error ? error.message : String(error ?? "");
-  return new Error(`CONFIG_ACCESS:${detail}`);
+  return new Error(`${CONFIG_ACCESS_SENTINEL}${getErrorDetail(error)}`);
 }
 
 function isConfigAccessError(error: unknown): boolean {
-  return error instanceof Error && error.message.startsWith("CONFIG_ACCESS:");
+  return error instanceof Error && error.message.startsWith(CONFIG_ACCESS_SENTINEL);
+}
+
+async function configInvoke<T>(command: string): Promise<T> {
+  try {
+    return await invoke<T>(command);
+  } catch (error) {
+    throw toConfigAccessError(error);
+  }
 }
 
 /** Extract directory, filename (without extension), and extension from a full path */
@@ -230,11 +245,11 @@ export async function renderHome(container: HTMLElement) {
 
   // Load defaults from settings (cache takes priority)
   if (!cache["copy-mode"]) {
-    const defaultCopy = await invoke<boolean>("get_default_copy_mode");
+    const defaultCopy = await configInvoke<boolean>("get_default_copy_mode");
     copyMode.checked = defaultCopy;
   }
   if (!cache["same-dir"]) {
-    const defaultSameDir = await invoke<boolean>("get_default_same_dir");
+    const defaultSameDir = await configInvoke<boolean>("get_default_same_dir");
     sameDirCheck.checked = defaultSameDir;
   }
 
@@ -248,12 +263,7 @@ export async function renderHome(container: HTMLElement) {
       const { dir, sep } = parsePath(inputPath.value);
       return `${dir}${sep}${filename}`;
     }
-    let defaultDir: string;
-    try {
-      defaultDir = await invoke<string>("get_default_output_dir");
-    } catch (error) {
-      throw toConfigAccessError(error);
-    }
+    const defaultDir = await configInvoke<string>("get_default_output_dir");
     const dir = defaultDir || ".";
     const sep = dir.includes("\\") ? "\\" : "/";
     return `${dir}${sep}${filename}`;
@@ -341,12 +351,7 @@ export async function renderHome(container: HTMLElement) {
       trimBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> ${t("trim.trimming")}`;
       status.textContent = "";
 
-      let resolution: string | null;
-      try {
-        resolution = await invoke<string | null>("get_default_resolution");
-      } catch (error) {
-        throw toConfigAccessError(error);
-      }
+      const resolution = await configInvoke<string | null>("get_default_resolution");
       const result = await invoke<string>("trim_video", {
         input: inputPath.value,
         output: finalOutput,
