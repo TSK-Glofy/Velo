@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 pub fn app_root() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| format!("Unable to locate executable: {e}"))?;
@@ -6,6 +6,7 @@ pub fn app_root() -> Result<PathBuf, String> {
 }
 
 pub fn app_root_from_exe(exe: &Path) -> Result<PathBuf, String> {
+    let exe = normalize_windows_exe_path(exe);
     exe.parent()
         .map(Path::to_path_buf)
         .ok_or_else(|| "Executable path has no parent directory".to_string())
@@ -61,10 +62,35 @@ pub fn background_dir_from_root(root: &Path) -> PathBuf {
 
 pub fn app_owned_path_from_root(root: &Path, relative: &str) -> Result<PathBuf, String> {
     let rel = Path::new(relative);
-    if rel.is_absolute() {
+    if rel.components().any(|c| matches!(c, Component::ParentDir))
+        || rel.has_root()
+        || has_forbidden_windows_components(rel)
+    {
         return Err("App-owned paths must be relative to the install directory".to_string());
     }
     Ok(root.join(rel))
+}
+
+#[cfg(windows)]
+fn has_forbidden_windows_components(path: &Path) -> bool {
+    path.components()
+        .any(|c| matches!(c, Component::Prefix(_) | Component::RootDir))
+}
+
+#[cfg(not(windows))]
+fn has_forbidden_windows_components(_: &Path) -> bool {
+    false
+}
+
+#[cfg(windows)]
+fn normalize_windows_exe_path(path: &Path) -> PathBuf {
+    let normalized = path.to_string_lossy();
+    normalized.strip_prefix(r"\\?\").map_or_else(|| path.to_path_buf(), PathBuf::from)
+}
+
+#[cfg(not(windows))]
+fn normalize_windows_exe_path(path: &Path) -> PathBuf {
+    path.to_path_buf()
 }
 
 #[cfg(test)]
@@ -92,5 +118,30 @@ mod tests {
     fn rejects_absolute_app_owned_relative_path() {
         let err = app_owned_path_from_root(Path::new(r"D:\Apps\Velo"), r"C:\temp\a.png").unwrap_err();
         assert!(err.contains("relative"));
+    }
+
+    #[test]
+    fn rejects_parent_directory_traversal() {
+        let err = app_owned_path_from_root(Path::new(r"D:\Apps\Velo"), r"..\outside.txt").unwrap_err();
+        assert!(err.contains("relative"));
+    }
+
+    #[test]
+    fn rejects_windows_unc_path() {
+        let err = app_owned_path_from_root(Path::new(r"D:\Apps\Velo"), r"\\temp\a.png").unwrap_err();
+        assert!(err.contains("relative"));
+    }
+
+    #[test]
+    fn rejects_windows_prefixed_relative_path() {
+        let err = app_owned_path_from_root(Path::new(r"D:\Apps\Velo"), r"C:temp\a.png").unwrap_err();
+        assert!(err.contains("relative"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn normalizes_extended_length_exe_paths() {
+        let root = app_root_from_exe(Path::new(r"\\?\C:\Users\me\Velo\velo.exe")).unwrap();
+        assert_eq!(root, Path::new(r"C:\Users\me\Velo"));
     }
 }
