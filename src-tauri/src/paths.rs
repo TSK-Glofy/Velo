@@ -142,6 +142,13 @@ mod tests {
 
     #[test]
     #[cfg(windows)]
+    fn rejects_windows_root_dir_relative_path() {
+        let err = app_owned_path_from_root(Path::new(r"D:\Apps\Velo"), r"\temp\a.png").unwrap_err();
+        assert!(err.contains("relative"));
+    }
+
+    #[test]
+    #[cfg(windows)]
     fn normalizes_extended_length_exe_paths() {
         let root = app_root_from_exe(Path::new(r"\\?\C:\Users\me\Velo\velo.exe")).unwrap();
         assert_eq!(root, Path::new(r"C:\Users\me\Velo"));
