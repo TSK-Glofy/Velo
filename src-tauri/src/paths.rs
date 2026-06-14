@@ -1,0 +1,96 @@
+use std::path::{Path, PathBuf};
+
+pub fn app_root() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| format!("Unable to locate executable: {e}"))?;
+    app_root_from_exe(&exe)
+}
+
+pub fn app_root_from_exe(exe: &Path) -> Result<PathBuf, String> {
+    exe.parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| "Executable path has no parent directory".to_string())
+}
+
+pub fn config_file() -> Result<PathBuf, String> {
+    Ok(config_file_from_root(&app_root()?))
+}
+
+pub fn install_defaults_file() -> Result<PathBuf, String> {
+    Ok(install_defaults_file_from_root(&app_root()?))
+}
+
+pub fn jobs_file() -> Result<PathBuf, String> {
+    Ok(jobs_file_from_root(&app_root()?))
+}
+
+pub fn job_log_file(task_id: &str) -> Result<PathBuf, String> {
+    Ok(job_log_file_from_root(&app_root()?, task_id))
+}
+
+pub fn preview_file(task_id: &str) -> Result<PathBuf, String> {
+    Ok(preview_file_from_root(&app_root()?, task_id))
+}
+
+pub fn app_owned_path(relative: &str) -> Result<PathBuf, String> {
+    app_owned_path_from_root(&app_root()?, relative)
+}
+
+pub fn config_file_from_root(root: &Path) -> PathBuf {
+    root.join("config").join("config.json")
+}
+
+pub fn install_defaults_file_from_root(root: &Path) -> PathBuf {
+    root.join("config").join("install.json")
+}
+
+pub fn jobs_file_from_root(root: &Path) -> PathBuf {
+    root.join("jobs").join("jobs.jsonl")
+}
+
+pub fn job_log_file_from_root(root: &Path, task_id: &str) -> PathBuf {
+    root.join("jobs").join("logs").join(format!("{task_id}.log"))
+}
+
+pub fn preview_file_from_root(root: &Path, task_id: &str) -> PathBuf {
+    root.join("preview").join(format!("{task_id}.jpg"))
+}
+
+pub fn background_dir_from_root(root: &Path) -> PathBuf {
+    root.join("pic").join("background")
+}
+
+pub fn app_owned_path_from_root(root: &Path, relative: &str) -> Result<PathBuf, String> {
+    let rel = Path::new(relative);
+    if rel.is_absolute() {
+        return Err("App-owned paths must be relative to the install directory".to_string());
+    }
+    Ok(root.join(rel))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn derives_app_root_from_exe_path() {
+        let root = app_root_from_exe(Path::new(r"C:\Users\me\Velo\velo.exe")).unwrap();
+        assert_eq!(root, Path::new(r"C:\Users\me\Velo"));
+    }
+
+    #[test]
+    fn builds_install_relative_paths() {
+        let root = Path::new(r"D:\Apps\Velo");
+        assert_eq!(config_file_from_root(root), root.join("config").join("config.json"));
+        assert_eq!(install_defaults_file_from_root(root), root.join("config").join("install.json"));
+        assert_eq!(jobs_file_from_root(root), root.join("jobs").join("jobs.jsonl"));
+        assert_eq!(job_log_file_from_root(root, "task_1"), root.join("jobs").join("logs").join("task_1.log"));
+        assert_eq!(preview_file_from_root(root, "task_1"), root.join("preview").join("task_1.jpg"));
+    }
+
+    #[test]
+    fn rejects_absolute_app_owned_relative_path() {
+        let err = app_owned_path_from_root(Path::new(r"D:\Apps\Velo"), r"C:\temp\a.png").unwrap_err();
+        assert!(err.contains("relative"));
+    }
+}

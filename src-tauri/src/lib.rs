@@ -1,6 +1,7 @@
 // 每个 mod 对应 src/ 下的一个文件，各自负责一块功能
 mod config;
 mod ffmpeg;
+mod paths;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
