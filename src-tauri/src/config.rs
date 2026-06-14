@@ -38,8 +38,12 @@ pub fn save_config(config: &AppConfig) -> Result<(), String> {
 
 pub fn load_config_from_root(root: &std::path::Path) -> AppConfig {
     let path = crate::paths::config_file_from_root(root);
-    if let Ok(content) = fs::read_to_string(&path) {
-        return serde_json::from_str(&content).unwrap_or_default();
+    match fs::read_to_string(&path) {
+        Ok(content) => return serde_json::from_str(&content).unwrap_or_default(),
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            return AppConfig::default();
+        }
+        Err(_) => {}
     }
 
     let config = AppConfig {
@@ -313,5 +317,19 @@ mod tests {
         let config = load_config_from_root(&root);
 
         assert_eq!(config.language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn non_not_found_config_read_error_does_not_seed_from_installer() {
+        let root = temp_root("read_error_no_seed");
+        let config_dir = root.join("config");
+        let config_path = config_dir.join("config.json");
+        fs::create_dir_all(&config_path).unwrap();
+        fs::write(config_dir.join("install.json"), r#"{"locale":"zh_CN"}"#).unwrap();
+
+        let config = load_config_from_root(&root);
+
+        assert_eq!(config.language, None);
+        assert!(config_path.is_dir());
     }
 }
