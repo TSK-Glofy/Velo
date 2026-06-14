@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
+import { configInvoke } from "./configAccess";
 import { applyBackground } from "./main";
 import { t, getLang } from "./i18n";
 
@@ -10,13 +11,13 @@ import { t, getLang } from "./i18n";
  * Render settings page
  */
 export async function renderSettings(container: HTMLElement) {
-  const currentFfmpeg = await invoke<string | null>("get_ffmpeg_path");
-  const currentBg = await invoke<string | null>("get_background_image");
-  const currentRes = await invoke<string | null>("get_default_resolution");
-  const currentWinSize = await invoke<string | null>("get_window_size");
-  const currentOutputDir = await invoke<string>("get_default_output_dir");
-  const currentCopyMode = await invoke<boolean>("get_default_copy_mode");
-  const currentSameDir = await invoke<boolean>("get_default_same_dir");
+  const currentFfmpeg = await configInvoke<string | null>("get_ffmpeg_path");
+  const currentBg = await configInvoke<string | null>("get_background_image");
+  const currentRes = await configInvoke<string | null>("get_default_resolution");
+  const currentWinSize = await configInvoke<string | null>("get_window_size");
+  const currentOutputDir = await configInvoke<string>("get_default_output_dir");
+  const currentCopyMode = await configInvoke<boolean>("get_default_copy_mode");
+  const currentSameDir = await configInvoke<boolean>("get_default_same_dir");
   const currentLang = getLang();
 
   container.innerHTML = `

@@ -20,7 +20,7 @@ pub async fn trim_video(
     codec_mode: Option<String>,
     rotation: Option<String>,
 ) -> Result<String, String> {
-    let ffmpeg_path = config::load_config()
+    let ffmpeg_path = config::load_config()?
         .ffmpeg_path
         .ok_or("未配置 FFmpeg 路径")?;
 
@@ -105,7 +105,7 @@ pub async fn merge_videos(
     inputs: Vec<String>,
     output: String,
 ) -> Result<String, String> {
-    let ffmpeg_path = config::load_config()
+    let ffmpeg_path = config::load_config()?
         .ffmpeg_path
         .ok_or("未配置 FFmpeg 路径")?;
 
@@ -161,7 +161,7 @@ pub async fn extract_frames(
     fps: Option<String>,
     format: String,
 ) -> Result<String, String> {
-    let ffmpeg_path = config::load_config()
+    let ffmpeg_path = config::load_config()?
         .ffmpeg_path
         .ok_or("未配置 FFmpeg 路径")?;
 

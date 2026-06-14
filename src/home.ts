@@ -2,6 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, ask } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import {
+  configErrorMessage,
+  configInvoke,
+  errorDetail,
+  isConfigAccessError,
+} from "./configAccess";
 import { t } from "./i18n";
 
 // Module-level cache: preserves user input across page switches
@@ -209,11 +215,11 @@ export async function renderHome(container: HTMLElement) {
 
   // Load defaults from settings (cache takes priority)
   if (!cache["copy-mode"]) {
-    const defaultCopy = await invoke<boolean>("get_default_copy_mode");
+    const defaultCopy = await configInvoke<boolean>("get_default_copy_mode");
     copyMode.checked = defaultCopy;
   }
   if (!cache["same-dir"]) {
-    const defaultSameDir = await invoke<boolean>("get_default_same_dir");
+    const defaultSameDir = await configInvoke<boolean>("get_default_same_dir");
     sameDirCheck.checked = defaultSameDir;
   }
 
@@ -227,33 +233,39 @@ export async function renderHome(container: HTMLElement) {
       const { dir, sep } = parsePath(inputPath.value);
       return `${dir}${sep}${filename}`;
     }
-    const defaultDir = await invoke<string | null>("get_default_output_dir");
+    const defaultDir = await configInvoke<string>("get_default_output_dir");
     const dir = defaultDir || ".";
     const sep = dir.includes("\\") ? "\\" : "/";
     return `${dir}${sep}${filename}`;
   }
 
   playBtn.addEventListener("click", async () => {
-    const out = await getOutputPath();
-    if (out) {
-      try {
+    try {
+      const out = await getOutputPath();
+      if (out) {
         await openPath(out);
-      } catch (e) {
-        status.textContent = `${t("trim.playFailed")}${e}`;
-        status.className = "text-sm mt-2 text-error";
       }
+    } catch (e) {
+      const message = isConfigAccessError(e)
+        ? `${configErrorMessage(e)} ${errorDetail(e)}`
+        : `${t("trim.playFailed")}${e}`;
+      status.textContent = message;
+      status.className = "text-sm mt-2 text-error";
     }
   });
 
   revealBtn.addEventListener("click", async () => {
-    const out = await getOutputPath();
-    if (out) {
-      try {
+    try {
+      const out = await getOutputPath();
+      if (out) {
         await revealItemInDir(out);
-      } catch (e) {
-        status.textContent = `${t("trim.openFolderFailed")}${e}`;
-        status.className = "text-sm mt-2 text-error";
       }
+    } catch (e) {
+      const message = isConfigAccessError(e)
+        ? `${configErrorMessage(e)} ${errorDetail(e)}`
+        : `${t("trim.openFolderFailed")}${e}`;
+      status.textContent = message;
+      status.className = "text-sm mt-2 text-error";
     }
   });
 
@@ -279,37 +291,37 @@ export async function renderHome(container: HTMLElement) {
   });
 
   trimBtn.addEventListener("click", async () => {
-    const finalOutput = await getOutputPath();
-
-    if (!inputPath.value || !finalOutput) {
-      status.textContent = t("trim.fillAllFields");
-      status.className = "text-sm mt-2 text-warning";
-      return;
-    }
-
-    const exists = await invoke<boolean>("check_file_exists", { path: finalOutput });
-    if (exists) {
-      const displayName = outputName.value || outputName.placeholder;
-      const overwrite = await ask(t("trim.fileExistsMsg").replace("{name}", displayName), {
-        title: t("trim.fileExists"),
-        kind: "warning",
-      });
-      if (!overwrite) return;
-    }
-
-    trimActions.classList.add("hidden");
-    trimActions.classList.remove("flex");
-    trimInfo.classList.remove("hidden");
-    statusLine.textContent = t("trim.processing");
-    progressBar.value = 0;
-    percentText.textContent = "0%";
-    trimBtn.disabled = true;
-    sameDirCheck.disabled = true;
-    trimBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> ${t("trim.trimming")}`;
-    status.textContent = "";
-
     try {
-      const resolution = await invoke<string | null>("get_default_resolution");
+      const finalOutput = await getOutputPath();
+
+      if (!inputPath.value || !finalOutput) {
+        status.textContent = t("trim.fillAllFields");
+        status.className = "text-sm mt-2 text-warning";
+        return;
+      }
+
+      const exists = await invoke<boolean>("check_file_exists", { path: finalOutput });
+      if (exists) {
+        const displayName = outputName.value || outputName.placeholder;
+        const overwrite = await ask(t("trim.fileExistsMsg").replace("{name}", displayName), {
+          title: t("trim.fileExists"),
+          kind: "warning",
+        });
+        if (!overwrite) return;
+      }
+
+      trimActions.classList.add("hidden");
+      trimActions.classList.remove("flex");
+      trimInfo.classList.remove("hidden");
+      statusLine.textContent = t("trim.processing");
+      progressBar.value = 0;
+      percentText.textContent = "0%";
+      trimBtn.disabled = true;
+      sameDirCheck.disabled = true;
+      trimBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> ${t("trim.trimming")}`;
+      status.textContent = "";
+
+      const resolution = await configInvoke<string | null>("get_default_resolution");
       const result = await invoke<string>("trim_video", {
         input: inputPath.value,
         output: finalOutput,
@@ -325,7 +337,10 @@ export async function renderHome(container: HTMLElement) {
       trimActions.classList.remove("hidden");
       trimActions.classList.add("flex");
     } catch (e) {
-      status.textContent = `${t("trim.failed")}${e}`;
+      const message = isConfigAccessError(e)
+        ? `${configErrorMessage(e)} ${errorDetail(e)}`
+        : `${t("trim.failed")}${e}`;
+      status.textContent = message;
       status.className = "text-sm mt-2 text-error";
     } finally {
       trimBtn.disabled = false;

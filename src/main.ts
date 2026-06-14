@@ -1,5 +1,5 @@
 import "./styles.css";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { setLang, type Lang } from "./i18n";
@@ -9,10 +9,76 @@ import { renderMerge } from "./merge";
 import { renderSettings } from "./settings";
 import { renderFrames } from "./frames";
 import { renderSetup } from "./setup";
+import {
+  configErrorMessage,
+  configInvoke,
+  errorDetail,
+  isConfigAccessError,
+} from "./configAccess";
+
+function createErrorScreen(
+  title: string,
+  messages: string[],
+  detail: string,
+): HTMLElement {
+  const wrapper = document.createElement("div");
+  wrapper.className = "mx-auto max-w-2xl px-6 py-10";
+
+  const card = document.createElement("div");
+  card.className = "card bg-base-200/90 shadow-lg";
+
+  const body = document.createElement("div");
+  body.className = "card-body gap-4";
+
+  const heading = document.createElement("h1");
+  heading.className = "text-2xl font-bold";
+  heading.textContent = title;
+  body.appendChild(heading);
+
+  for (const message of messages) {
+    const paragraph = document.createElement("p");
+    paragraph.className = "text-base leading-7";
+    paragraph.textContent = message;
+    body.appendChild(paragraph);
+  }
+
+  const detailBox = document.createElement("div");
+  detailBox.className = "rounded-md bg-base-300/70 p-3 text-sm break-all whitespace-pre-wrap";
+  detailBox.textContent = detail;
+  body.appendChild(detailBox);
+
+  card.appendChild(body);
+  wrapper.appendChild(card);
+  return wrapper;
+}
+
+export function renderConfigError(container: HTMLElement, error: unknown) {
+  container.replaceChildren(
+    createErrorScreen(
+      "Configuration Access Error",
+      [configErrorMessage(error)],
+      errorDetail(error) || "Unknown configuration access error.",
+    ),
+  );
+}
+
+function renderFatalError(container: HTMLElement, error: unknown) {
+  const detail = errorDetail(error) || "Unknown fatal error.";
+  container.replaceChildren(
+    createErrorScreen(
+      "Velo Hit an Unexpected Error",
+      [
+        "Velo ran into an unexpected problem while loading this page.",
+        "Velo 在加载此页面时遇到了意外错误。",
+      ],
+      detail,
+    ),
+  );
+}
 
 /** Load user's background image */
 export async function applyBackground() {
-  const bgPath = await invoke<string | null>("get_background_image");
+  const bgPath = await configInvoke<string | null>("get_background_image");
   if (bgPath) {
     document.body.style.backgroundImage = `url('${convertFileSrc(bgPath)}')`;
   } else {
@@ -45,19 +111,37 @@ async function navigate(page: string, content: HTMLElement) {
 
   // Settings page re-renders every time (needs latest config)
   if (page === "settings") {
-    await renderSettings(container);
+    try {
+      await renderSettings(container);
+    } catch (error) {
+      if (isConfigAccessError(error)) {
+        renderConfigError(container, error);
+      } else {
+        renderFatalError(container, error);
+      }
+    }
     return;
   }
 
   // Other pages initialize only once
   if (!pageInitialized[page]) {
-    pageInitialized[page] = true;
     if (page === "trim") {
-      await renderHome(container);
+      try {
+        await renderHome(container);
+        pageInitialized[page] = true;
+      } catch (error) {
+        if (isConfigAccessError(error)) {
+          renderConfigError(container, error);
+        } else {
+          renderFatalError(container, error);
+        }
+      }
     } else if (page === "merge") {
       renderMerge(container);
+      pageInitialized[page] = true;
     } else if (page === "frames") {
       renderFrames(container);
+      pageInitialized[page] = true;
     }
   }
 }
@@ -66,29 +150,38 @@ window.addEventListener("DOMContentLoaded", async () => {
   const sidebar = document.querySelector("#sidebar") as HTMLElement;
   const content = document.querySelector("#content") as HTMLElement;
 
-  // Load saved language before rendering any UI
-  const savedLang = await invoke<string>("get_language");
-  setLang(savedLang as Lang);
+  try {
+    // Load saved language before rendering any UI
+    const savedLang = await configInvoke<string>("get_language");
+    setLang(savedLang as Lang);
 
-  await applyBackground();
+    await applyBackground();
 
-  const savedSize = await invoke<string | null>("get_window_size");
-  if (savedSize) {
-    const [w, h] = savedSize.split("x").map(Number);
-    await getCurrentWindow().setSize(new LogicalSize(w, h));
-  }
+    const savedSize = await configInvoke<string | null>("get_window_size");
+    if (savedSize) {
+      const [w, h] = savedSize.split("x").map(Number);
+      await getCurrentWindow().setSize(new LogicalSize(w, h));
+    }
 
-  const ffmpegPath = await invoke<string | null>("get_ffmpeg_path");
+    const ffmpegPath = await configInvoke<string | null>("get_ffmpeg_path");
 
-  if (!ffmpegPath) {
-    sidebar.style.display = "none";
-    renderSetup(content, () => {
-      sidebar.style.display = "flex";
+    if (!ffmpegPath) {
+      sidebar.style.display = "none";
+      renderSetup(content, () => {
+        sidebar.style.display = "flex";
+        renderSidebar(sidebar, (page) => navigate(page, content));
+        void navigate("trim", content);
+      });
+    } else {
       renderSidebar(sidebar, (page) => navigate(page, content));
-      navigate("trim", content);
-    });
-  } else {
-    renderSidebar(sidebar, (page) => navigate(page, content));
-    await navigate("trim", content);
+      await navigate("trim", content);
+    }
+  } catch (error) {
+    sidebar.style.display = "none";
+    if (isConfigAccessError(error)) {
+      renderConfigError(content, error);
+    } else {
+      renderFatalError(content, error);
+    }
   }
 });
