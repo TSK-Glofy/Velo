@@ -8,6 +8,7 @@ Velo needs two related improvements:
 
 1. Long-running FFmpeg work must be traceable through a Task list window. Users should see progress, task state, retry options, and a live frame preview. If Velo closes unexpectedly, interrupted work should be visible and retryable.
 2. Velo should stop storing app-owned configuration in the system config directory. App-owned settings, imported pictures, task journals, logs, and preview cache should live under the Velo installation directory so deleting the install folder removes Velo-owned data.
+3. The app's first-run language should follow the language the user chose in the installer.
 
 User-generated output videos and images are not app-owned data. They should stay wherever the user chooses and should not be deleted with Velo.
 
@@ -18,6 +19,7 @@ User-generated output videos and images are not app-owned data. They should stay
 - Do not support migration from the old AppData/config-dir model; there are no current users to preserve.
 - Do not make retry create a new visible task history item.
 - Do not guarantee that the live preview frame is the exact encoded frame from the active FFmpeg pipeline.
+- Do not let installer language overwrite a language preference already saved by the user.
 
 ## Portable Data Layout
 
@@ -29,6 +31,7 @@ Recommended directory structure:
 Velo/
   velo.exe
   config/
+    install.json
     config.json
   pic/
     background/
@@ -44,6 +47,7 @@ Velo/
 Path rules:
 
 - `config/config.json` stores app settings.
+- `config/install.json` stores installer-selected first-run defaults.
 - `jobs/jobs.jsonl` stores structured task lifecycle events.
 - `jobs/logs/` stores one detailed FFmpeg log file per task.
 - `preview/` stores temporary low-resolution preview images.
@@ -52,6 +56,32 @@ Path rules:
 - Runtime code resolves relative app-owned paths from the installation directory.
 
 The current `dirs::config_dir()/velo/config.json` model should be replaced with helpers based on `std::env::current_exe().parent()`.
+
+## Installer-selected Language Default
+
+The installer language is a first-run default, not a permanent override.
+
+Behavior:
+
+1. During installation, the installer writes `config/install.json` under the Velo installation directory.
+2. `config/install.json` includes the installer-selected locale, for example:
+
+```json
+{"locale":"zh_CN"}
+```
+
+3. On first launch, if `config/config.json` does not exist, Velo initializes it using the installer locale.
+4. After `config/config.json` exists, Velo reads the language from `config/config.json`.
+5. If the user changes language in Velo, the updated user preference in `config/config.json` wins over the installer seed.
+
+Locale mapping:
+
+- Setup installer: use the language selected in the setup UI.
+- MSI installer: `en_US` initializes English.
+- MSI installer: `zh_CN` initializes Chinese.
+- Unknown or unsupported locale values fall back to English.
+
+This keeps setup and MSI behavior consistent while preventing future updates or repairs from resetting user preferences.
 
 ## Background Image Import
 
@@ -240,7 +270,7 @@ Task-specific notes:
 Suggested Rust modules:
 
 - `paths`: install directory and app-owned path helpers.
-- `config`: reads/writes `config/config.json`.
+- `config`: reads/writes `config/config.json` and applies `config/install.json` only during first-run initialization.
 - `jobs`: task models, registry, journal replay, journal append.
 - `ffmpeg`: command building and process execution.
 - `preview`: low-resolution preview extraction.
@@ -297,6 +327,7 @@ Every task event includes the internal `taskId`. The UI uses it internally but d
 
 - Unit-test path helpers for install-relative paths and relative path resolution.
 - Unit-test config read/write using a temporary install directory.
+- Unit-test installer language seeding for `en_US`, `zh_CN`, unknown locale fallback, and existing config preservation.
 - Unit-test background import copies files and updates config.
 - Unit-test journal replay for completed, failed, cancelled, and interrupted states.
 - Unit-test retry output naming: original path, overwrite, and `old_file(1).ext` fallback.
@@ -307,5 +338,6 @@ Every task event includes the internal `taskId`. The UI uses it internally but d
 ## Open Implementation Notes
 
 - The installer must be configured so the default install location is user-writable.
+- Setup and MSI packaging must both write the selected installer locale to `config/install.json` before first launch.
 - The exact Tauri multi-window routing for `Task list` should follow Tauri v2 patterns already used by this project.
 - The final visual implementation should follow the approved mockup: left state cards, top progress bar, four metric boxes, and bottom black preview area.
