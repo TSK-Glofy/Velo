@@ -7,6 +7,27 @@ import { t } from "./i18n";
 // Module-level cache: preserves user input across page switches
 const cache: Record<string, string> = {};
 
+function getConfigAccessMessage(error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error ?? "");
+  return [
+    "Velo cannot read or create configuration in the installation folder.",
+    "Install Velo in a user-writable folder or fix folder permissions.",
+    "Velo 无法读取或创建安装目录中的配置。请将 Velo 安装到可写文件夹，或修复文件夹权限。",
+    detail,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function toConfigAccessError(error: unknown): Error {
+  const detail = error instanceof Error ? error.message : String(error ?? "");
+  return new Error(`CONFIG_ACCESS:${detail}`);
+}
+
+function isConfigAccessError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("CONFIG_ACCESS:");
+}
+
 /** Extract directory, filename (without extension), and extension from a full path */
 function parsePath(fullPath: string) {
   const sep = fullPath.includes("\\") ? "\\" : "/";
@@ -227,33 +248,44 @@ export async function renderHome(container: HTMLElement) {
       const { dir, sep } = parsePath(inputPath.value);
       return `${dir}${sep}${filename}`;
     }
-    const defaultDir = await invoke<string | null>("get_default_output_dir");
+    let defaultDir: string;
+    try {
+      defaultDir = await invoke<string>("get_default_output_dir");
+    } catch (error) {
+      throw toConfigAccessError(error);
+    }
     const dir = defaultDir || ".";
     const sep = dir.includes("\\") ? "\\" : "/";
     return `${dir}${sep}${filename}`;
   }
 
   playBtn.addEventListener("click", async () => {
-    const out = await getOutputPath();
-    if (out) {
-      try {
+    try {
+      const out = await getOutputPath();
+      if (out) {
         await openPath(out);
-      } catch (e) {
-        status.textContent = `${t("trim.playFailed")}${e}`;
-        status.className = "text-sm mt-2 text-error";
       }
+    } catch (e) {
+      const message = isConfigAccessError(e)
+        ? getConfigAccessMessage(e)
+        : `${t("trim.playFailed")}${e}`;
+      status.textContent = message;
+      status.className = "text-sm mt-2 text-error";
     }
   });
 
   revealBtn.addEventListener("click", async () => {
-    const out = await getOutputPath();
-    if (out) {
-      try {
+    try {
+      const out = await getOutputPath();
+      if (out) {
         await revealItemInDir(out);
-      } catch (e) {
-        status.textContent = `${t("trim.openFolderFailed")}${e}`;
-        status.className = "text-sm mt-2 text-error";
       }
+    } catch (e) {
+      const message = isConfigAccessError(e)
+        ? getConfigAccessMessage(e)
+        : `${t("trim.openFolderFailed")}${e}`;
+      status.textContent = message;
+      status.className = "text-sm mt-2 text-error";
     }
   });
 
@@ -279,37 +311,42 @@ export async function renderHome(container: HTMLElement) {
   });
 
   trimBtn.addEventListener("click", async () => {
-    const finalOutput = await getOutputPath();
-
-    if (!inputPath.value || !finalOutput) {
-      status.textContent = t("trim.fillAllFields");
-      status.className = "text-sm mt-2 text-warning";
-      return;
-    }
-
-    const exists = await invoke<boolean>("check_file_exists", { path: finalOutput });
-    if (exists) {
-      const displayName = outputName.value || outputName.placeholder;
-      const overwrite = await ask(t("trim.fileExistsMsg").replace("{name}", displayName), {
-        title: t("trim.fileExists"),
-        kind: "warning",
-      });
-      if (!overwrite) return;
-    }
-
-    trimActions.classList.add("hidden");
-    trimActions.classList.remove("flex");
-    trimInfo.classList.remove("hidden");
-    statusLine.textContent = t("trim.processing");
-    progressBar.value = 0;
-    percentText.textContent = "0%";
-    trimBtn.disabled = true;
-    sameDirCheck.disabled = true;
-    trimBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> ${t("trim.trimming")}`;
-    status.textContent = "";
-
     try {
-      const resolution = await invoke<string | null>("get_default_resolution");
+      const finalOutput = await getOutputPath();
+
+      if (!inputPath.value || !finalOutput) {
+        status.textContent = t("trim.fillAllFields");
+        status.className = "text-sm mt-2 text-warning";
+        return;
+      }
+
+      const exists = await invoke<boolean>("check_file_exists", { path: finalOutput });
+      if (exists) {
+        const displayName = outputName.value || outputName.placeholder;
+        const overwrite = await ask(t("trim.fileExistsMsg").replace("{name}", displayName), {
+          title: t("trim.fileExists"),
+          kind: "warning",
+        });
+        if (!overwrite) return;
+      }
+
+      trimActions.classList.add("hidden");
+      trimActions.classList.remove("flex");
+      trimInfo.classList.remove("hidden");
+      statusLine.textContent = t("trim.processing");
+      progressBar.value = 0;
+      percentText.textContent = "0%";
+      trimBtn.disabled = true;
+      sameDirCheck.disabled = true;
+      trimBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> ${t("trim.trimming")}`;
+      status.textContent = "";
+
+      let resolution: string | null;
+      try {
+        resolution = await invoke<string | null>("get_default_resolution");
+      } catch (error) {
+        throw toConfigAccessError(error);
+      }
       const result = await invoke<string>("trim_video", {
         input: inputPath.value,
         output: finalOutput,
@@ -325,7 +362,10 @@ export async function renderHome(container: HTMLElement) {
       trimActions.classList.remove("hidden");
       trimActions.classList.add("flex");
     } catch (e) {
-      status.textContent = `${t("trim.failed")}${e}`;
+      const message = isConfigAccessError(e)
+        ? getConfigAccessMessage(e)
+        : `${t("trim.failed")}${e}`;
+      status.textContent = message;
       status.className = "text-sm mt-2 text-error";
     } finally {
       trimBtn.disabled = false;
