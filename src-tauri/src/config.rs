@@ -47,8 +47,9 @@ pub fn load_config_from_root(root: &std::path::Path) -> Result<AppConfig, String
         Err(_) => {}
     }
 
+    let language = read_installer_language_from_root(root)?;
     let config = AppConfig {
-        language: Some(read_installer_language_from_root(root)),
+        language: Some(language),
         ..AppConfig::default()
     };
     save_config_to_root(root, &config)?;
@@ -64,13 +65,21 @@ fn save_config_to_root(root: &std::path::Path, config: &AppConfig) -> Result<(),
     fs::write(&path, json).map_err(|e| e.to_string())
 }
 
-fn read_installer_language_from_root(root: &std::path::Path) -> String {
+fn read_installer_language_from_root(root: &std::path::Path) -> Result<String, String> {
     let path = crate::paths::install_defaults_file_from_root(root);
-    let locale = fs::read_to_string(path)
-        .ok()
-        .and_then(|content| serde_json::from_str::<InstallDefaults>(&content).ok())
-        .and_then(|defaults| defaults.locale);
-    map_installer_locale(locale.as_deref())
+    match fs::read_to_string(&path) {
+        Ok(content) => {
+            let defaults = serde_json::from_str::<InstallDefaults>(&content)
+                .map_err(|e| format!("Failed to parse installer defaults {}: {}", path.display(), e))?;
+            Ok(map_installer_locale(defaults.locale.as_deref()))
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok("en".to_string()),
+        Err(error) => Err(format!(
+            "Failed to read installer defaults {}: {}",
+            path.display(),
+            error
+        )),
+    }
 }
 
 fn map_installer_locale(locale: Option<&str>) -> String {
@@ -280,6 +289,17 @@ mod tests {
     }
 
     #[test]
+    fn missing_installer_seed_defaults_to_english_and_creates_config() {
+        let root = temp_root("missing_seed");
+        fs::create_dir_all(root.join("config")).unwrap();
+
+        let config = load_config_from_root(&root).unwrap();
+
+        assert_eq!(config.language.as_deref(), Some("en"));
+        assert!(root.join("config").join("config.json").exists());
+    }
+
+    #[test]
     fn unsupported_installer_locale_falls_back_to_english() {
         let root = temp_root("fallback_seed");
         fs::create_dir_all(root.join("config")).unwrap();
@@ -341,6 +361,20 @@ mod tests {
 
         assert!(config.is_err());
         assert_eq!(fs::read_to_string(&config_path).unwrap(), r#"{"language":"en""#);
+    }
+
+    #[test]
+    fn malformed_installer_seed_returns_error_and_does_not_create_config() {
+        let root = temp_root("malformed_seed");
+        let config_dir = root.join("config");
+        let config_path = config_dir.join("config.json");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(config_dir.join("install.json"), r#"{"locale":"zh_CN""#).unwrap();
+
+        let config = load_config_from_root(&root);
+
+        assert!(config.is_err());
+        assert!(!config_path.exists());
     }
 
     #[test]
