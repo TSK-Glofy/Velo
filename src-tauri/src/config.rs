@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
 
 /// 应用配置，存储用户设置的 ffmpeg 路径
 /// 使用 serde 做序列化/反序列化，可以直接读写 JSON 文件
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct AppConfig {
     pub ffmpeg_path: Option<String>,
     pub background_image: Option<String>,
@@ -14,35 +13,67 @@ pub struct AppConfig {
     pub default_copy_mode: Option<bool>,
     pub default_same_dir: Option<bool>,
     pub language: Option<String>,
+    pub max_concurrent_jobs: Option<u32>,
 }
 
-/// 获取配置文件的存放路径: ~/.velo/config.json
-/// 放在用户目录下，不会因为程序移动而丢失配置
-fn config_path() -> PathBuf {
-    let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("velo");
-    path.push("config.json");
-    path
+/// 安装目录下的初始配置种子，例如安装器写入的语言偏好
+#[derive(Serialize, Deserialize, Default)]
+struct InstallDefaults {
+    locale: Option<String>,
 }
 
-/// 从磁盘读取配置，如果文件不存在则返回默认空配置
+/// 从安装目录读取配置；首次运行时会根据 install.json 生成 config.json
 pub fn load_config() -> AppConfig {
-    let path = config_path();
-    match fs::read_to_string(&path) {
-        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+    match crate::paths::app_root() {
+        Ok(root) => load_config_from_root(&root),
         Err(_) => AppConfig::default(),
     }
 }
 
-/// 将配置写入磁盘，自动创建目录
+/// 将配置写入安装目录下的 config/config.json，自动创建目录
 pub fn save_config(config: &AppConfig) -> Result<(), String> {
-    let path = config_path();
+    let root = crate::paths::app_root()?;
+    save_config_to_root(&root, config)
+}
+
+pub fn load_config_from_root(root: &std::path::Path) -> AppConfig {
+    let path = crate::paths::config_file_from_root(root);
+    if let Ok(content) = fs::read_to_string(&path) {
+        return serde_json::from_str(&content).unwrap_or_default();
+    }
+
+    let config = AppConfig {
+        language: Some(read_installer_language_from_root(root)),
+        ..AppConfig::default()
+    };
+    let _ = save_config_to_root(root, &config);
+    config
+}
+
+fn save_config_to_root(root: &std::path::Path, config: &AppConfig) -> Result<(), String> {
+    let path = crate::paths::config_file_from_root(root);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let json = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    fs::write(&path, json).map_err(|e| e.to_string())?;
-    Ok(())
+    fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+fn read_installer_language_from_root(root: &std::path::Path) -> String {
+    let path = crate::paths::install_defaults_file_from_root(root);
+    let locale = fs::read_to_string(path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<InstallDefaults>(&content).ok())
+        .and_then(|defaults| defaults.locale);
+    map_installer_locale(locale.as_deref())
+}
+
+fn map_installer_locale(locale: Option<&str>) -> String {
+    match locale.unwrap_or("").replace('-', "_").as_str() {
+        "zh_CN" | "SimpChinese" | "Chinese" => "zh".to_string(),
+        "en_US" | "en" | "English" => "en".to_string(),
+        _ => "en".to_string(),
+    }
 }
 
 // === Tauri 命令 ===
@@ -202,4 +233,85 @@ pub fn set_language(lang: String) -> Result<String, String> {
 #[tauri::command]
 pub fn check_file_exists(path: String) -> bool {
     std::path::Path::new(&path).exists()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_root(name: &str) -> std::path::PathBuf {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("velo_{name}_{stamp}"))
+    }
+
+    #[test]
+    fn seeds_language_from_zh_cn_installer_locale() {
+        let root = temp_root("zh_seed");
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config").join("install.json"),
+            r#"{"locale":"zh_CN"}"#,
+        )
+        .unwrap();
+
+        let config = load_config_from_root(&root);
+
+        assert_eq!(config.language.as_deref(), Some("zh"));
+        assert!(root.join("config").join("config.json").exists());
+    }
+
+    #[test]
+    fn seeds_language_from_en_us_installer_locale() {
+        let root = temp_root("en_seed");
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config").join("install.json"),
+            r#"{"locale":"en_US"}"#,
+        )
+        .unwrap();
+
+        let config = load_config_from_root(&root);
+
+        assert_eq!(config.language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn unsupported_installer_locale_falls_back_to_english() {
+        let root = temp_root("fallback_seed");
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config").join("install.json"),
+            r#"{"locale":"fr_FR"}"#,
+        )
+        .unwrap();
+
+        let config = load_config_from_root(&root);
+
+        assert_eq!(config.language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn existing_config_language_wins_over_installer_seed() {
+        let root = temp_root("existing_wins");
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config").join("install.json"),
+            r#"{"locale":"zh_CN"}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("config").join("config.json"),
+            r#"{"language":"en"}"#,
+        )
+        .unwrap();
+
+        let config = load_config_from_root(&root);
+
+        assert_eq!(config.language.as_deref(), Some("en"));
+    }
 }
