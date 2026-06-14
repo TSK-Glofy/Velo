@@ -54,7 +54,7 @@ export function renderSidebar(
     sidebar.querySelector("#sidebar-toggle")!.setAttribute("title", expanded ? t("sidebar.collapse") : t("sidebar.expand"));
   });
 
-  const buttons = sidebar.querySelectorAll<HTMLButtonElement>(".sidebar-btn");
+  const buttons = sidebar.querySelectorAll<HTMLButtonElement>(".sidebar-btn[data-page]");
   buttons.forEach((btn) => {
     btn.addEventListener("click", () => {
       buttons.forEach((b) => b.classList.remove("active", "btn-active"));
