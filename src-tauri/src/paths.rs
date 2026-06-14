@@ -127,12 +127,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn rejects_windows_unc_path() {
         let err = app_owned_path_from_root(Path::new(r"D:\Apps\Velo"), r"\\temp\a.png").unwrap_err();
         assert!(err.contains("relative"));
     }
 
     #[test]
+    #[cfg(windows)]
     fn rejects_windows_prefixed_relative_path() {
         let err = app_owned_path_from_root(Path::new(r"D:\Apps\Velo"), r"C:temp\a.png").unwrap_err();
         assert!(err.contains("relative"));
