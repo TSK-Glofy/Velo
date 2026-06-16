@@ -66,6 +66,8 @@ const translations: Record<Lang, Record<string, string>> = {
     "merge.playFailed": "播放失败: ",
     "merge.openFolderFailed": "打开文件夹失败: ",
     "merge.failed": "失败: ",
+    "merge.fileExists": "文件已存在",
+    "merge.fileExistsMsg": "输出文件已存在，是否覆盖？",
 
     // Frames
     "frames.title": "逐帧提取",
@@ -222,6 +224,8 @@ const translations: Record<Lang, Record<string, string>> = {
     "merge.playFailed": "Play failed: ",
     "merge.openFolderFailed": "Failed to open folder: ",
     "merge.failed": "Failed: ",
+    "merge.fileExists": "File exists",
+    "merge.fileExistsMsg": "Output file already exists. Overwrite?",
 
     // Frames
     "frames.title": "Frame Extraction",

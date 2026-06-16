@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { open, ask } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
@@ -9,6 +8,7 @@ import {
   isConfigAccessError,
 } from "./configAccess";
 import { t } from "./i18n";
+import { createTask, openTaskListWindow } from "./taskApi";
 
 // Module-level cache: preserves user input across page switches
 const cache: Record<string, string> = {};
@@ -147,11 +147,6 @@ export async function renderHome(container: HTMLElement) {
   const rotation = container.querySelector("#rotation") as HTMLSelectElement;
   const trimBtn = container.querySelector("#trim-btn") as HTMLButtonElement;
   const status = container.querySelector("#trim-status")!;
-  const trimInfo = container.querySelector("#trim-info")!;
-  const statusLine = container.querySelector("#ffmpeg-status")!;
-  const progressBar = container.querySelector("#trim-progress") as HTMLProgressElement;
-  const percentText = container.querySelector("#trim-percent")!;
-  const trimActions = container.querySelector("#trim-actions")!;
   const playBtn = container.querySelector("#play-btn")!;
   const revealBtn = container.querySelector("#reveal-btn")!;
 
@@ -280,16 +275,6 @@ export async function renderHome(container: HTMLElement) {
     }
   });
 
-  listen<string>("ffmpeg-status", (event) => {
-    statusLine.textContent = event.payload;
-  });
-
-  listen<number>("ffmpeg-progress", (event) => {
-    const pct = Math.round(event.payload);
-    progressBar.value = pct;
-    percentText.textContent = `${pct}%`;
-  });
-
   trimBtn.addEventListener("click", async () => {
     try {
       const finalOutput = await getOutputPath();
@@ -310,42 +295,27 @@ export async function renderHome(container: HTMLElement) {
         if (!overwrite) return;
       }
 
-      trimActions.classList.add("hidden");
-      trimActions.classList.remove("flex");
-      trimInfo.classList.remove("hidden");
-      statusLine.textContent = t("trim.processing");
-      progressBar.value = 0;
-      percentText.textContent = "0%";
-      trimBtn.disabled = true;
-      sameDirCheck.disabled = true;
-      trimBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> ${t("trim.trimming")}`;
-      status.textContent = "";
-
       const resolution = await configInvoke<string | null>("get_default_resolution");
-      const result = await invoke<string>("trim_video", {
+      await createTask({
+        kind: "trim",
         input: inputPath.value,
         output: finalOutput,
         start: startTime.value,
         duration: duration.value,
         resolution: resolution || null,
         framerate: framerate.value || null,
-        codec_mode: copyMode.checked ? "copy" : "reencode",
+        codecMode: copyMode.checked ? "copy" : "reencode",
         rotation: rotation.value || null,
       });
-      status.textContent = result;
+      await openTaskListWindow();
+      status.textContent = t("tasks.created");
       status.className = "text-sm mt-2 text-success";
-      trimActions.classList.remove("hidden");
-      trimActions.classList.add("flex");
     } catch (e) {
       const message = isConfigAccessError(e)
         ? `${configErrorMessage(e)} ${errorDetail(e)}`
         : `${t("trim.failed")}${e}`;
       status.textContent = message;
       status.className = "text-sm mt-2 text-error";
-    } finally {
-      trimBtn.disabled = false;
-      sameDirCheck.disabled = false;
-      trimBtn.textContent = t("trim.start");
     }
   });
 }

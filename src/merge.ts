@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open, save, ask } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
+import { createTask, openTaskListWindow } from "./taskApi";
 
 // Module-level cache: preserves file list and output path across page switches
 const cache: { files: string[]; output: string } = { files: [], output: "" };
@@ -64,11 +64,6 @@ export function renderMerge(container: HTMLElement) {
   const outputPath = container.querySelector("#merge-output") as HTMLInputElement;
   const mergeBtn = container.querySelector("#merge-btn") as HTMLButtonElement;
   const status = container.querySelector("#merge-status")!;
-  const mergeActions = container.querySelector("#merge-actions")!;
-  const mergeInfo = container.querySelector("#merge-info")!;
-  const statusLine = container.querySelector("#merge-ffmpeg-status")!;
-  const progressBar = container.querySelector("#merge-progress") as HTMLProgressElement;
-  const percentText = container.querySelector("#merge-percent")!;
 
   outputPath.value = cache.output;
   outputPath.addEventListener("input", () => { cache.output = outputPath.value; });
@@ -158,15 +153,6 @@ export function renderMerge(container: HTMLElement) {
     }
   });
 
-  listen<string>("ffmpeg-status", (event) => {
-    statusLine.textContent = event.payload;
-  });
-  listen<number>("ffmpeg-progress", (event) => {
-    const pct = Math.round(event.payload);
-    progressBar.value = pct;
-    percentText.textContent = `${pct}%`;
-  });
-
   mergeBtn.addEventListener("click", async () => {
     if (cache.files.length < 2) {
       status.textContent = t("merge.needTwoFiles");
@@ -179,31 +165,27 @@ export function renderMerge(container: HTMLElement) {
       return;
     }
 
-    mergeActions.classList.add("hidden");
-    mergeActions.classList.remove("flex");
-    mergeInfo.classList.remove("hidden");
-    statusLine.textContent = t("merge.processing");
-    progressBar.value = 0;
-    percentText.textContent = "0%";
-    mergeBtn.disabled = true;
-    mergeBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> ${t("merge.merging")}`;
-    status.textContent = "";
-
     try {
-      const result = await invoke<string>("merge_videos", {
+      const exists = await invoke<boolean>("check_file_exists", { path: outputPath.value });
+      if (exists) {
+        const overwrite = await ask(t("merge.fileExistsMsg"), {
+          title: t("merge.fileExists"),
+          kind: "warning",
+        });
+        if (!overwrite) return;
+      }
+
+      await createTask({
+        kind: "merge",
         inputs: cache.files,
         output: outputPath.value,
       });
-      status.textContent = result;
+      await openTaskListWindow();
+      status.textContent = t("tasks.created");
       status.className = "text-sm mt-2 text-success";
-      mergeActions.classList.remove("hidden");
-      mergeActions.classList.add("flex");
     } catch (e) {
       status.textContent = `${t("merge.failed")}${e}`;
       status.className = "text-sm mt-2 text-error";
-    } finally {
-      mergeBtn.disabled = false;
-      mergeBtn.textContent = t("merge.start");
     }
   });
 }

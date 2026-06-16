@@ -1,8 +1,7 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
+import { createTask, openTaskListWindow } from "./taskApi";
 
 // Module-level cache: preserves user input across page switches
 const cache: Record<string, string> = {};
@@ -98,11 +97,6 @@ export function renderFrames(container: HTMLElement) {
   const inputPath = container.querySelector("#frames-input") as HTMLInputElement;
   const outputPath = container.querySelector("#frames-output") as HTMLInputElement;
   const status = container.querySelector("#frames-status")!;
-  const actions = container.querySelector("#frames-actions")!;
-  const info = container.querySelector("#frames-info")!;
-  const statusLine = container.querySelector("#frames-ffmpeg-status")!;
-  const progressBar = container.querySelector("#frames-progress") as HTMLProgressElement;
-  const percentText = container.querySelector("#frames-percent")!;
   const extractBtn = container.querySelector("#frames-btn") as HTMLButtonElement;
 
   container.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input[id], select[id]").forEach((el) => {
@@ -140,15 +134,6 @@ export function renderFrames(container: HTMLElement) {
     }
   });
 
-  listen<string>("ffmpeg-status", (event) => {
-    statusLine.textContent = event.payload;
-  });
-  listen<number>("ffmpeg-progress", (event) => {
-    const pct = Math.round(event.payload);
-    progressBar.value = pct;
-    percentText.textContent = `${pct}%`;
-  });
-
   extractBtn.addEventListener("click", async () => {
     const startTime = (container.querySelector("#frames-start") as HTMLInputElement).value;
     const duration = (container.querySelector("#frames-duration") as HTMLInputElement).value;
@@ -161,18 +146,9 @@ export function renderFrames(container: HTMLElement) {
       return;
     }
 
-    actions.classList.add("hidden");
-    actions.classList.remove("flex");
-    info.classList.remove("hidden");
-    statusLine.textContent = t("frames.processing");
-    progressBar.value = 0;
-    percentText.textContent = "0%";
-    extractBtn.disabled = true;
-    extractBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> ${t("frames.extracting")}`;
-    status.textContent = "";
-
     try {
-      const result = await invoke<string>("extract_frames", {
+      await createTask({
+        kind: "frames",
         input: inputPath.value,
         outputDir: outputPath.value,
         start: startTime || null,
@@ -180,16 +156,12 @@ export function renderFrames(container: HTMLElement) {
         fps: fps || null,
         format,
       });
-      status.textContent = result;
+      await openTaskListWindow();
+      status.textContent = t("tasks.created");
       status.className = "text-sm mt-2 text-success";
-      actions.classList.remove("hidden");
-      actions.classList.add("flex");
     } catch (e) {
       status.textContent = `${t("frames.failed")}${e}`;
       status.className = "text-sm mt-2 text-error";
-    } finally {
-      extractBtn.disabled = false;
-      extractBtn.textContent = t("frames.start");
     }
   });
 }
