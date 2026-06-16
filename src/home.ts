@@ -223,7 +223,10 @@ export async function renderHome(container: HTMLElement) {
 
   /** Compute final output path based on current mode */
   async function getOutputPath(): Promise<string> {
-    const filename = outputName.value || outputName.placeholder;
+    const raw = outputName.value || outputName.placeholder;
+    const ext = getOutputExt();
+    const hasExt = /\.[A-Za-z0-9]{1,5}$/.test(raw);
+    const filename = hasExt ? raw : `${raw}${ext}`;
     if (sameDirCheck.checked && inputPath.value) {
       const { dir, sep } = parsePath(inputPath.value);
       return `${dir}${sep}${filename}`;
