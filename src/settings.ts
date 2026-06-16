@@ -107,11 +107,64 @@ export async function renderSettings(container: HTMLElement) {
 
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
+            <h2 class="card-title text-lg">${t("settings.storage")}</h2>
+            <p class="text-sm opacity-70 mb-2">${t("settings.storageHint")}</p>
+            <button id="clear-cache-open" class="btn btn-outline w-fit">${t("settings.clearCache")}</button>
+          </div>
+        </div>
+
+        <dialog id="clear-modal" class="modal">
+          <div class="modal-box">
+            <h3 class="font-bold text-lg mb-3">${t("settings.clearTitle")}</h3>
+            <label class="flex items-center gap-2 cursor-pointer mb-2 opacity-80">
+              <input id="clear-all" type="checkbox" class="checkbox checkbox-sm" />
+              <span class="font-medium">${t("settings.clearSelectAll")}</span>
+            </label>
+            <div class="divider my-1"></div>
+            <label class="flex items-center justify-between gap-2 cursor-pointer py-1">
+              <span class="flex items-center gap-2">
+                <input data-clear="logs" type="checkbox" class="checkbox" />
+                <span>${t("settings.clearLogs")}</span>
+              </span>
+              <span data-size="logs" class="text-sm opacity-60 tabular-nums">—</span>
+            </label>
+            <label class="flex items-center justify-between gap-2 cursor-pointer py-1">
+              <span class="flex items-center gap-2">
+                <input data-clear="previews" type="checkbox" class="checkbox" />
+                <span>${t("settings.clearPreviews")}</span>
+              </span>
+              <span data-size="previews" class="text-sm opacity-60 tabular-nums">—</span>
+            </label>
+            <label class="flex items-center justify-between gap-2 cursor-pointer py-1">
+              <span class="flex items-center gap-2">
+                <input data-clear="images" type="checkbox" class="checkbox" />
+                <span>${t("settings.clearImages")}</span>
+              </span>
+              <span data-size="images" class="text-sm opacity-60 tabular-nums">—</span>
+            </label>
+            <label class="flex items-center justify-between gap-2 cursor-pointer py-1">
+              <span class="flex items-center gap-2">
+                <input data-clear="history" type="checkbox" class="checkbox" />
+                <span>${t("settings.clearHistory")}</span>
+              </span>
+              <span data-size="history" class="text-sm opacity-60 tabular-nums">—</span>
+            </label>
+            <div id="clear-msg" class="text-sm mt-2 min-h-5"></div>
+            <div class="modal-action">
+              <button id="clear-cancel" class="btn btn-ghost">${t("settings.clearCancel")}</button>
+              <button id="clear-confirm" class="btn btn-error">${t("settings.clearConfirm")}</button>
+            </div>
+          </div>
+          <form method="dialog" class="modal-backdrop"><button>close</button></form>
+        </dialog>
+
+        <div class="card bg-base-200/80 shadow-md mb-6">
+          <div class="card-body">
             <h2 class="card-title text-lg">${t("settings.windowSize")}</h2>
             <select id="winsize-select" class="select w-full">
               <option value="">${t("settings.windowSizeDefault")} (1280x720)</option>
               <option value="1600x900">1600x900</option>
-              <option value="1280x720">1280x720</option>
+              <option value="1920x1080">1920x1080</option>
             </select>
             <div id="winsize-msg" class="text-sm mt-1"></div>
           </div>
@@ -151,7 +204,7 @@ export async function renderSettings(container: HTMLElement) {
               <img src="/icon.png" alt="Velo" class="w-16 h-16 rounded-xl shrink-0" />
               <div>
                 <h3 class="text-lg font-bold">Velo</h3>
-                <p class="text-sm opacity-70">v0.10.1</p>
+                <p class="text-sm opacity-70">v0.10.2</p>
                 <p class="text-sm opacity-70">TSK-Glofy</p>
               </div>
             </div>
@@ -203,7 +256,7 @@ export async function renderSettings(container: HTMLElement) {
   winSizeSelect.addEventListener("change", async () => {
     try {
       await invoke("set_window_size", { size: winSizeSelect.value });
-      const sizeStr = winSizeSelect.value || "800x600";
+      const sizeStr = winSizeSelect.value || "1280x720";
       const [w, h] = sizeStr.split("x").map(Number);
       const win = getCurrentWindow();
       await win.setSize(new LogicalSize(w, h));
@@ -384,5 +437,128 @@ export async function renderSettings(container: HTMLElement) {
   container.querySelector("#github-link")!.addEventListener("click", (e) => {
     e.preventDefault();
     openUrl("https://github.com/TSK-Glofy/Velo");
+  });
+
+  // === 存储与清理 ===
+  type CategoryUsage = { bytes: number; files: number };
+  type StorageUsage = {
+    task_logs: CategoryUsage;
+    previews: CategoryUsage;
+    imported_images: CategoryUsage;
+    task_history: CategoryUsage;
+  };
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes <= 0) return t("settings.clearEmpty");
+    const units = ["B", "KB", "MB", "GB"];
+    let value = bytes;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    return `${value >= 100 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+  };
+
+  const clearModal = container.querySelector("#clear-modal") as HTMLDialogElement;
+  const clearMsg = container.querySelector("#clear-msg")!;
+  const clearAll = container.querySelector("#clear-all") as HTMLInputElement;
+  const clearChecks = Array.from(
+    container.querySelectorAll<HTMLInputElement>("input[data-clear]"),
+  );
+  const sizeEls: Record<string, HTMLElement> = {
+    logs: container.querySelector('[data-size="logs"]')!,
+    previews: container.querySelector('[data-size="previews"]')!,
+    images: container.querySelector('[data-size="images"]')!,
+    history: container.querySelector('[data-size="history"]')!,
+  };
+
+  async function refreshStorageUsage() {
+    try {
+      const usage = await invoke<StorageUsage>("get_storage_usage");
+      sizeEls.logs.textContent = formatBytes(usage.task_logs.bytes);
+      sizeEls.previews.textContent = formatBytes(usage.previews.bytes);
+      sizeEls.images.textContent = formatBytes(usage.imported_images.bytes);
+      sizeEls.history.textContent = formatBytes(usage.task_history.bytes);
+    } catch {
+      // 读取失败时保持占位符，不阻断清理操作
+    }
+  }
+
+  clearAll.addEventListener("change", () => {
+    clearChecks.forEach((c) => (c.checked = clearAll.checked));
+  });
+  clearChecks.forEach((c) =>
+    c.addEventListener("change", () => {
+      clearAll.checked = clearChecks.every((x) => x.checked);
+    }),
+  );
+
+  container.querySelector("#clear-cache-open")!.addEventListener("click", async () => {
+    clearMsg.textContent = "";
+    clearMsg.className = "text-sm mt-2 min-h-5";
+    clearAll.checked = false;
+    clearChecks.forEach((c) => (c.checked = false));
+    await refreshStorageUsage();
+    clearModal.showModal();
+  });
+
+  container.querySelector("#clear-cancel")!.addEventListener("click", () => {
+    clearModal.close();
+  });
+
+  container.querySelector("#clear-confirm")!.addEventListener("click", async () => {
+    const selected = clearChecks.filter((c) => c.checked).map((c) => c.dataset.clear!);
+    if (selected.length === 0) {
+      clearMsg.textContent = t("settings.clearNone");
+      clearMsg.className = "text-sm mt-2 min-h-5 text-error";
+      return;
+    }
+
+    const labels: Record<string, string> = {
+      logs: t("settings.clearLogs"),
+      previews: t("settings.clearPreviews"),
+      images: t("settings.clearImages"),
+      history: t("settings.clearHistory"),
+    };
+    const commands: Record<string, string> = {
+      logs: "clear_task_logs",
+      previews: "clear_previews",
+      images: "clear_imported_images",
+      history: "clear_task_history",
+    };
+
+    let backgroundCleared = false;
+    const failures: string[] = [];
+    for (const key of selected) {
+      try {
+        const res = await invoke(commands[key]);
+        if (key === "images" && res && (res as { background_cleared?: boolean }).background_cleared) {
+          backgroundCleared = true;
+        }
+      } catch (e) {
+        failures.push(`${t("settings.clearItemFailed").replace("{name}", labels[key])}${e}`);
+      }
+    }
+
+    if (backgroundCleared) {
+      document.body.style.backgroundImage = "";
+      const bgCurrentEl = container.querySelector("#bg-current");
+      if (bgCurrentEl) {
+        bgCurrentEl.textContent = `${t("settings.bgCurrent")}${t("settings.bgNotSet")}`;
+      }
+    }
+
+    await refreshStorageUsage();
+    clearAll.checked = false;
+    clearChecks.forEach((c) => (c.checked = false));
+
+    if (failures.length === 0) {
+      clearMsg.textContent = t("settings.clearDone");
+      clearMsg.className = "text-sm mt-2 min-h-5 text-success";
+    } else {
+      clearMsg.textContent = failures.join("  ");
+      clearMsg.className = "text-sm mt-2 min-h-5 text-error";
+    }
   });
 }

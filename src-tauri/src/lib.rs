@@ -2,6 +2,7 @@
 mod config;
 mod ffmpeg;
 mod jobs;
+mod maintenance;
 mod paths;
 mod preview;
 mod task_types;
@@ -19,6 +20,28 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(shared_registry)
         .manage(preview::PreviewState::default())
+        .setup(|_app| {
+            // 关闭 WebView2 的表单自动填充（"保存的信息"下拉），全局作用于所有输入框
+            #[cfg(target_os = "windows")]
+            {
+                use tauri::Manager;
+                if let Some(window) = _app.get_webview_window("main") {
+                    let _ = window.with_webview(|webview| unsafe {
+                        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings4;
+                        use windows::core::Interface;
+                        if let Ok(core) = webview.controller().CoreWebView2() {
+                            if let Ok(settings) = core.Settings() {
+                                if let Ok(settings4) = settings.cast::<ICoreWebView2Settings4>() {
+                                    let _ = settings4.SetIsGeneralAutofillEnabled(false);
+                                    let _ = settings4.SetIsPasswordAutosaveEnabled(false);
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+            Ok(())
+        })
         // 注册所有命令，前端通过 invoke("命令名") 调用
         .invoke_handler(tauri::generate_handler![
             config::get_ffmpeg_path,
@@ -52,6 +75,11 @@ pub fn run() {
             jobs::retry_interrupted_tasks,
             jobs::cancel_task,
             jobs::delete_task,
+            jobs::clear_task_history,
+            maintenance::get_storage_usage,
+            maintenance::clear_task_logs,
+            maintenance::clear_previews,
+            maintenance::clear_imported_images,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

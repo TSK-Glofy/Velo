@@ -56,7 +56,7 @@ pub fn load_config_from_root(root: &std::path::Path) -> Result<AppConfig, String
     Ok(config)
 }
 
-fn save_config_to_root(root: &std::path::Path, config: &AppConfig) -> Result<(), String> {
+pub fn save_config_to_root(root: &std::path::Path, config: &AppConfig) -> Result<(), String> {
     let path = crate::paths::config_file_from_root(root);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;

@@ -366,6 +366,25 @@ impl TaskRegistry {
         Ok(())
     }
 
+    /// 清空任务历史：删除内存中的所有任务记录并移除 jobs.jsonl。
+    /// 存在运行中或等待中的任务时拒绝，以免孤立正在执行的任务。
+    /// 返回被清除的任务条数。
+    pub fn clear_history(&mut self) -> Result<u64, String> {
+        if !self.running.is_empty() {
+            return Err("Cannot clear history while tasks are running".to_string());
+        }
+        if !self.queue.is_empty() {
+            return Err("Cannot clear history while tasks are pending".to_string());
+        }
+        let count = self.tasks.len() as u64;
+        let path = crate::paths::jobs_file_from_root(&crate::paths::app_root()?);
+        if path.exists() {
+            fs::remove_file(&path).map_err(|e| e.to_string())?;
+        }
+        self.tasks.clear();
+        Ok(count)
+    }
+
     pub fn cancel_requested(&self, task_id: &str) -> bool {
         self.running
             .get(task_id)
@@ -704,6 +723,14 @@ pub fn delete_task(
         .lock()
         .map_err(|_| "Task registry lock failed".to_string())?;
     registry.delete_task(&task_id)
+}
+
+#[tauri::command]
+pub fn clear_task_history(state: tauri::State<SharedTaskRegistry>) -> Result<u64, String> {
+    let mut registry = state
+        .lock()
+        .map_err(|_| "Task registry lock failed".to_string())?;
+    registry.clear_history()
 }
 
 #[tauri::command]

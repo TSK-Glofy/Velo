@@ -1,6 +1,6 @@
 [package]
 name = "velo"
-version = "0.10.1"
+version = "0.10.2"
 description = "FFmpeg GUI wrapper built with Tauri and Rust. Lightweight, cross-platform, and blazing fast."
 authors = ["Glofy"]
 edition = "2021"
@@ -24,3 +24,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-dialog = "2"
 chrono = { version = "0.4", features = ["serde"] }
+
+# Windows-only: used to disable the WebView2 form autofill ("save form data") dropdown
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_Foundation"] }

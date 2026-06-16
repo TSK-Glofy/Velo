@@ -36,14 +36,22 @@ pub fn jobs_file_from_root(root: &Path) -> PathBuf {
     root.join("jobs").join("jobs.jsonl")
 }
 
+pub fn logs_dir_from_root(root: &Path) -> PathBuf {
+    root.join("jobs").join("logs")
+}
+
+pub fn preview_dir_from_root(root: &Path) -> PathBuf {
+    root.join("preview")
+}
+
 pub fn job_log_file_from_root(root: &Path, task_id: &str) -> PathBuf {
     let safe_task_id = sanitize_task_id(task_id);
-    root.join("jobs").join("logs").join(format!("{safe_task_id}.log"))
+    logs_dir_from_root(root).join(format!("{safe_task_id}.log"))
 }
 
 pub fn preview_file_from_root(root: &Path, task_id: &str) -> PathBuf {
     let safe_task_id = sanitize_task_id(task_id);
-    root.join("preview").join(format!("{safe_task_id}.jpg"))
+    preview_dir_from_root(root).join(format!("{safe_task_id}.jpg"))
 }
 
 pub fn background_dir_from_root(root: &Path) -> PathBuf {
