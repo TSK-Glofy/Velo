@@ -169,6 +169,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       sidebar.style.display = "none";
       renderSetup(content, () => {
         sidebar.style.display = "flex";
+        content.innerHTML = "";
         renderSidebar(sidebar, (page) => navigate(page, content));
         void navigate("trim", content);
       });

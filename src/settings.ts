@@ -18,6 +18,7 @@ export async function renderSettings(container: HTMLElement) {
   const currentOutputDir = await configInvoke<string>("get_default_output_dir");
   const currentCopyMode = await configInvoke<boolean>("get_default_copy_mode");
   const currentSameDir = await configInvoke<boolean>("get_default_same_dir");
+  const currentMaxJobs = await configInvoke<number>("get_max_concurrent_jobs");
   const currentLang = getLang();
 
   container.innerHTML = `
@@ -92,6 +93,20 @@ export async function renderSettings(container: HTMLElement) {
               <span>${t("settings.sameDir")}</span>
             </label>
             <div id="defaults-msg" class="text-sm mt-1"></div>
+          </div>
+        </div>
+
+        <div class="card bg-base-200/80 shadow-md mb-6">
+          <div class="card-body">
+            <h2 class="card-title text-lg">${t("settings.maxConcurrentJobs")}</h2>
+            <p class="text-sm opacity-70 mb-2">${t("settings.maxConcurrentJobsHint")}</p>
+            <select id="max-jobs-select" class="select w-full">
+              <option value="1" ${currentMaxJobs === 1 ? "selected" : ""}>1</option>
+              <option value="2" ${currentMaxJobs === 2 ? "selected" : ""}>2</option>
+              <option value="3" ${currentMaxJobs === 3 ? "selected" : ""}>3</option>
+              <option value="4" ${currentMaxJobs === 4 ? "selected" : ""}>4</option>
+            </select>
+            <div id="max-jobs-msg" class="text-sm mt-1"></div>
           </div>
         </div>
 
@@ -274,9 +289,9 @@ export async function renderSettings(container: HTMLElement) {
     });
     if (selected) {
       try {
-        await invoke("set_background_image", { path: selected as string });
+        const dest = await invoke<string>("import_background_image", { path: selected as string });
         await applyBackground();
-        bgCurrent.textContent = `${t("settings.bgCurrent")}${selected}`;
+        bgCurrent.textContent = `${t("settings.bgCurrent")}${dest}`;
         bgMsg.textContent = t("settings.bgUpdated");
         bgMsg.className = "text-sm mt-1 text-success";
       } catch (e) {
@@ -288,6 +303,7 @@ export async function renderSettings(container: HTMLElement) {
 
   container.querySelector("#bg-clear")!.addEventListener("click", async () => {
     try {
+      await invoke("clear_background_image");
       document.body.style.backgroundImage = "";
       bgCurrent.textContent = `${t("settings.bgCurrent")}${t("settings.bgNotSet")}`;
       bgMsg.textContent = t("settings.bgCleared");
@@ -295,6 +311,19 @@ export async function renderSettings(container: HTMLElement) {
     } catch (e) {
       bgMsg.textContent = `${t("settings.failed")}${e}`;
       bgMsg.className = "text-sm mt-1 text-error";
+    }
+  });
+
+  const maxJobsSelect = container.querySelector("#max-jobs-select") as HTMLSelectElement;
+  const maxJobsMsg = container.querySelector("#max-jobs-msg")!;
+  maxJobsSelect.addEventListener("change", async () => {
+    try {
+      await invoke("set_max_concurrent_jobs", { value: Number(maxJobsSelect.value) });
+      maxJobsMsg.textContent = t("settings.saved");
+      maxJobsMsg.className = "text-sm mt-1 text-success";
+    } catch (e) {
+      maxJobsMsg.textContent = `${t("settings.saveFailed")}${e}`;
+      maxJobsMsg.className = "text-sm mt-1 text-error";
     }
   });
 

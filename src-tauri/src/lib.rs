@@ -1,7 +1,9 @@
 // 每个 mod 对应 src/ 下的一个文件，各自负责一块功能
 mod config;
 mod ffmpeg;
+mod jobs;
 mod paths;
+mod task_types;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -14,6 +16,10 @@ pub fn run() {
             config::set_ffmpeg_path,
             config::get_background_image,
             config::set_background_image,
+            config::import_background_image,
+            config::clear_background_image,
+            config::get_max_concurrent_jobs,
+            config::set_max_concurrent_jobs,
             config::get_default_resolution,
             config::set_default_resolution,
             config::get_window_size,

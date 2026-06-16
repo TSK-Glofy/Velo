@@ -113,13 +113,21 @@ pub fn set_ffmpeg_path(path: String) -> Result<String, String> {
     Ok("保存成功".to_string())
 }
 
-/// 获取用户设置的背景图路径
+/// 获取用户设置的背景图路径；存储的相对路径会拼回安装目录
 #[tauri::command]
 pub fn get_background_image() -> Result<Option<String>, String> {
-    Ok(load_config()?.background_image)
+    let Some(stored) = load_config()?.background_image else {
+        return Ok(None);
+    };
+    let path = std::path::Path::new(&stored);
+    if path.is_absolute() {
+        return Ok(Some(stored));
+    }
+    let resolved = crate::paths::app_owned_path(&stored)?;
+    Ok(Some(resolved.to_string_lossy().to_string()))
 }
 
-/// 保存用户选择的背景图路径
+/// 兼容旧调用：保存绝对路径
 #[tauri::command]
 pub fn set_background_image(path: String) -> Result<String, String> {
     if !std::path::Path::new(&path).exists() {
@@ -129,6 +137,102 @@ pub fn set_background_image(path: String) -> Result<String, String> {
     config.background_image = Some(path);
     save_config(&config)?;
     Ok("保存成功".to_string())
+}
+
+fn normalize_app_relative_path(path: &std::path::Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn unique_background_filename(dir: &std::path::Path, filename: &str) -> std::path::PathBuf {
+    let candidate = dir.join(filename);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let source = std::path::Path::new(filename);
+    let stem = source
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("background");
+    let ext = source.extension().and_then(|s| s.to_str()).unwrap_or("");
+    for idx in 1.. {
+        let name = if ext.is_empty() {
+            format!("{stem}({idx})")
+        } else {
+            format!("{stem}({idx}).{ext}")
+        };
+        let candidate = dir.join(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    unreachable!()
+}
+
+pub fn import_background_image_for_root(
+    root: &std::path::Path,
+    path: String,
+) -> Result<String, String> {
+    let source = std::path::PathBuf::from(&path);
+    if !source.exists() {
+        return Err("文件不存在".to_string());
+    }
+    let filename = source
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| "Invalid file name".to_string())?;
+    let bg_dir = crate::paths::background_dir_from_root(root);
+    fs::create_dir_all(&bg_dir).map_err(|e| e.to_string())?;
+    let dest = unique_background_filename(&bg_dir, filename);
+    fs::copy(&source, &dest).map_err(|e| e.to_string())?;
+
+    let rel = dest
+        .strip_prefix(root)
+        .map_err(|e| e.to_string())?;
+    let rel = normalize_app_relative_path(rel);
+    let mut config = load_config_from_root(root)?;
+    config.background_image = Some(rel);
+    save_config_to_root(root, &config)?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// 将用户选择的图片复制到 <install>/pic/background/ 并保存相对路径
+#[tauri::command]
+pub fn import_background_image(path: String) -> Result<String, String> {
+    let root = crate::paths::app_root()?;
+    import_background_image_for_root(&root, path)
+}
+
+/// 清除背景图设置（仅从 config 移除，不删除文件）
+#[tauri::command]
+pub fn clear_background_image() -> Result<String, String> {
+    let mut config = load_config()?;
+    config.background_image = None;
+    save_config(&config)?;
+    Ok("OK".to_string())
+}
+
+pub fn set_max_concurrent_jobs_for_root(
+    root: &std::path::Path,
+    value: u32,
+) -> Result<(), String> {
+    let mut config = load_config_from_root(root)?;
+    config.max_concurrent_jobs = Some(value.clamp(1, 4));
+    save_config_to_root(root, &config)
+}
+
+#[tauri::command]
+pub fn get_max_concurrent_jobs() -> Result<u32, String> {
+    Ok(load_config()?
+        .max_concurrent_jobs
+        .unwrap_or(1)
+        .clamp(1, 4))
+}
+
+#[tauri::command]
+pub fn set_max_concurrent_jobs(value: u32) -> Result<String, String> {
+    let root = crate::paths::app_root()?;
+    set_max_concurrent_jobs_for_root(&root, value)?;
+    Ok("OK".to_string())
 }
 
 /// 获取默认分辨率
@@ -381,5 +485,63 @@ mod tests {
     fn installer_locale_mapping_is_case_insensitive() {
         assert_eq!(map_installer_locale(Some("zh-cn")), "zh");
         assert_eq!(map_installer_locale(Some("EN-US")), "en");
+    }
+
+    #[test]
+    fn copies_background_into_install_folder_and_stores_relative_path() {
+        let root = temp_root("bg_import");
+        let source_dir = temp_root("bg_source");
+        fs::create_dir_all(&source_dir).unwrap();
+        let source = source_dir.join("custom.png");
+        fs::write(&source, b"png bytes").unwrap();
+
+        let imported =
+            import_background_image_for_root(&root, source.to_string_lossy().to_string()).unwrap();
+
+        assert!(
+            imported.ends_with(r"pic\background\custom.png")
+                || imported.ends_with("pic/background/custom.png")
+        );
+        let config = load_config_from_root(&root).unwrap();
+        assert_eq!(
+            config.background_image.as_deref(),
+            Some("pic/background/custom.png")
+        );
+        assert_eq!(
+            fs::read(crate::paths::background_dir_from_root(&root).join("custom.png")).unwrap(),
+            b"png bytes"
+        );
+    }
+
+    #[test]
+    fn background_import_uniquifies_filename_when_destination_exists() {
+        let root = temp_root("bg_dupe");
+        let source_dir = temp_root("bg_dupe_src");
+        fs::create_dir_all(&source_dir).unwrap();
+        let source = source_dir.join("bg.png");
+        fs::write(&source, b"a").unwrap();
+        let bg_dir = crate::paths::background_dir_from_root(&root);
+        fs::create_dir_all(&bg_dir).unwrap();
+        fs::write(bg_dir.join("bg.png"), b"existing").unwrap();
+
+        let imported =
+            import_background_image_for_root(&root, source.to_string_lossy().to_string()).unwrap();
+
+        assert!(imported.ends_with("bg(1).png"));
+    }
+
+    #[test]
+    fn max_concurrent_jobs_is_clamped_to_supported_range() {
+        let root = temp_root("max_jobs");
+        set_max_concurrent_jobs_for_root(&root, 0).unwrap();
+        assert_eq!(
+            load_config_from_root(&root).unwrap().max_concurrent_jobs,
+            Some(1)
+        );
+        set_max_concurrent_jobs_for_root(&root, 99).unwrap();
+        assert_eq!(
+            load_config_from_root(&root).unwrap().max_concurrent_jobs,
+            Some(4)
+        );
     }
 }
