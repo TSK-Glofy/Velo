@@ -4,6 +4,7 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   cancelTask,
+  deleteTask,
   getTask,
   listTasks,
   retryTask,
@@ -120,19 +121,44 @@ function renderTaskCards(container: HTMLElement) {
     .map((task) => {
       const baseClass = statusClass(task.state as TaskState);
       const selected = task.id === selectedTaskId ? " task-card-selected" : "";
+      const canDelete = task.state !== "running" && task.state !== "pending";
+      const deleteBtn = canDelete
+        ? `<span class="task-card-delete" role="button" tabindex="0" data-delete-id="${escapeAttr(task.id)}" title="${escapeAttr(t("tasks.delete"))}">×</span>`
+        : "";
       return `
-        <button type="button" class="${baseClass}${selected}" data-task-id="${escapeAttr(task.id)}">
+        <div class="${baseClass}${selected}" role="button" tabindex="0" data-task-id="${escapeAttr(task.id)}">
           <div class="task-card-title">${escapeHtml(task.title)}</div>
           <div class="task-card-meta">${escapeHtml(t(`tasks.state.${task.state}`))} · ${escapeHtml(formatTaskDate(task.createdAt))}</div>
-        </button>
+          ${deleteBtn}
+        </div>
       `;
     })
     .join("");
-  list.querySelectorAll<HTMLButtonElement>("button[data-task-id]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      selectedTaskId = btn.dataset.taskId ?? null;
+  list.querySelectorAll<HTMLElement>("[data-task-id]").forEach((card) => {
+    card.addEventListener("click", () => {
+      selectedTaskId = card.dataset.taskId ?? null;
       renderTaskCards(container);
       renderSelectedTask(container);
+    });
+  });
+  list.querySelectorAll<HTMLElement>("[data-delete-id]").forEach((del) => {
+    del.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = del.dataset.deleteId;
+      if (!id) return;
+      try {
+        await deleteTask(id);
+        tasks = tasks.filter((t) => t.id !== id);
+        previewVersions.delete(id);
+        if (selectedTaskId === id) {
+          selectedTaskId = tasks[0]?.id ?? null;
+          renderedStructureKey = null;
+        }
+        renderTaskCards(container);
+        renderSelectedTask(container);
+      } catch (err) {
+        alert(`${t("tasks.deleteFailed")}${err}`);
+      }
     });
   });
 }

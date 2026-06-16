@@ -127,4 +127,8 @@ pub enum TaskEvent {
         task_id: String,
         interrupted_at: DateTime<Utc>,
     },
+    TaskDeleted {
+        task_id: String,
+        deleted_at: DateTime<Utc>,
+    },
 }

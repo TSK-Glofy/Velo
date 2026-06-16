@@ -158,6 +158,10 @@ fn apply_event(
                 detail.summary.finished_at = Some(interrupted_at);
             }
         }
+        TaskEvent::TaskDeleted { task_id, .. } => {
+            tasks.remove(&task_id);
+            order.retain(|id| id != &task_id);
+        }
     }
 }
 
@@ -344,6 +348,22 @@ impl TaskRegistry {
             return CancelOutcome::Dequeued { cancelled_at };
         }
         CancelOutcome::NotFound
+    }
+
+    pub fn delete_task(&mut self, task_id: &str) -> Result<(), String> {
+        if self.running.contains_key(task_id) {
+            return Err("Cannot delete a running task".to_string());
+        }
+        if !self.tasks.contains_key(task_id) {
+            return Err("Task not found".to_string());
+        }
+        self.queue.retain(|id| id != task_id);
+        self.tasks.remove(task_id);
+        append_event(&TaskEvent::TaskDeleted {
+            task_id: task_id.to_string(),
+            deleted_at: Utc::now(),
+        })?;
+        Ok(())
     }
 
     pub fn cancel_requested(&self, task_id: &str) -> bool {
@@ -673,6 +693,17 @@ pub fn retry_interrupted_tasks(
         )?);
     }
     Ok(summaries)
+}
+
+#[tauri::command]
+pub fn delete_task(
+    state: tauri::State<SharedTaskRegistry>,
+    task_id: String,
+) -> Result<(), String> {
+    let mut registry = state
+        .lock()
+        .map_err(|_| "Task registry lock failed".to_string())?;
+    registry.delete_task(&task_id)
 }
 
 #[tauri::command]

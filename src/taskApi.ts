@@ -53,6 +53,10 @@ export function cancelTask(taskId: string): Promise<boolean> {
   return invoke<boolean>("cancel_task", { taskId });
 }
 
+export function deleteTask(taskId: string): Promise<void> {
+  return invoke<void>("delete_task", { taskId });
+}
+
 export function openTaskListWindow(taskId?: string): Promise<void> {
   window.dispatchEvent(new CustomEvent("velo:open-tasks", { detail: taskId }));
   return Promise.resolve();
