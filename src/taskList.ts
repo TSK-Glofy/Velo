@@ -16,7 +16,12 @@ import { t } from "./i18n";
 let selectedTaskId: string | null = null;
 let tasks: TaskSummary[] = [];
 let listenersBound = false;
+let renderedStructureKey: string | null = null;
 const previewVersions = new Map<string, number>();
+
+function structureKey(task: TaskSummary): string {
+  return `${task.id}|${task.state}|${task.error ? "e" : "n"}|${task.output ?? ""}`;
+}
 
 export async function renderTaskList(container: HTMLElement) {
   container.innerHTML = `
@@ -124,14 +129,22 @@ function renderSelectedTask(container: HTMLElement) {
   if (!detail) return;
   const task = tasks.find((item) => item.id === selectedTaskId);
   if (!task) {
-    detail.innerHTML = `<div class="task-detail-empty">${escapeHtml(t("tasks.noSelection"))}</div>`;
+    if (renderedStructureKey !== null) {
+      detail.innerHTML = `<div class="task-detail-empty">${escapeHtml(t("tasks.noSelection"))}</div>`;
+      renderedStructureKey = null;
+    }
     return;
   }
-  const percent = Math.max(0, Math.min(100, task.metrics.percent ?? 0));
-  const previewVersion = previewVersions.get(task.id) ?? 0;
-  const preview = task.metrics.previewPath
-    ? `<img src="${escapeAttr(convertFileSrc(task.metrics.previewPath))}?v=${previewVersion}" alt="preview" />`
-    : "";
+  const key = structureKey(task);
+  if (renderedStructureKey !== key) {
+    buildDetailScaffold(detail, task);
+    bindDetailActions(detail, task, container);
+    renderedStructureKey = key;
+  }
+  patchDetailValues(detail, task);
+}
+
+function buildDetailScaffold(detail: HTMLElement, task: TaskSummary) {
   const canRetry =
     task.state === "failed" ||
     task.state === "cancelled" ||
@@ -152,21 +165,22 @@ function renderSelectedTask(container: HTMLElement) {
         ${canRetry ? `<button type="button" class="btn btn-sm btn-primary" data-action="retry">${escapeHtml(t("tasks.retry"))}</button>` : ""}
       </div>
     </div>
-    <progress class="progress progress-primary task-detail-progress" value="${percent.toFixed(1)}" max="100"></progress>
+    <progress class="progress progress-primary task-detail-progress" value="0" max="100"></progress>
     <div class="task-metrics-grid">
-      <div class="task-metric"><span>${escapeHtml(t("tasks.metric.frame"))}</span><strong>${escapeHtml(formatMetric(task.metrics.frame))}</strong></div>
-      <div class="task-metric"><span>${escapeHtml(t("tasks.metric.time"))}</span><strong>${escapeHtml(formatMetric(task.metrics.outTime))}</strong></div>
-      <div class="task-metric"><span>${escapeHtml(t("tasks.metric.speed"))}</span><strong>${escapeHtml(formatMetric(task.metrics.speed))}</strong></div>
-      <div class="task-metric"><span>${escapeHtml(t("tasks.metric.size"))}</span><strong>${escapeHtml(formatMetric(task.metrics.outputSize))}</strong></div>
+      <div class="task-metric"><span>${escapeHtml(t("tasks.metric.frame"))}</span><strong data-metric="frame">-</strong></div>
+      <div class="task-metric"><span>${escapeHtml(t("tasks.metric.time"))}</span><strong data-metric="time">-</strong></div>
+      <div class="task-metric"><span>${escapeHtml(t("tasks.metric.speed"))}</span><strong data-metric="speed">-</strong></div>
+      <div class="task-metric"><span>${escapeHtml(t("tasks.metric.size"))}</span><strong data-metric="size">-</strong></div>
     </div>
-    <div class="task-preview-frame">${preview}</div>
+    <div class="task-preview-frame"></div>
     ${errorBlock}
   `;
+}
 
+function bindDetailActions(detail: HTMLElement, task: TaskSummary, container: HTMLElement) {
   detail.querySelectorAll<HTMLButtonElement>("button[data-action]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const action = btn.dataset.action;
-      if (!task) return;
       try {
         if (action === "retry") {
           let policy: "useOriginal" | "useNumberedFallback" = "useOriginal";
@@ -198,6 +212,40 @@ function renderSelectedTask(container: HTMLElement) {
       }
     });
   });
+}
+
+function patchDetailValues(detail: HTMLElement, task: TaskSummary) {
+  const percent = Math.max(0, Math.min(100, task.metrics.percent ?? 0));
+  const progress = detail.querySelector<HTMLProgressElement>(".task-detail-progress");
+  if (progress) progress.value = percent;
+
+  const setMetric = (name: string, value: string) => {
+    const el = detail.querySelector<HTMLElement>(`strong[data-metric="${name}"]`);
+    if (el && el.textContent !== value) el.textContent = value;
+  };
+  setMetric("frame", formatMetric(task.metrics.frame));
+  setMetric("time", formatMetric(task.metrics.outTime));
+  setMetric("speed", formatMetric(task.metrics.speed));
+  setMetric("size", formatMetric(task.metrics.outputSize));
+
+  const previewFrame = detail.querySelector(".task-preview-frame");
+  if (previewFrame) {
+    let img = previewFrame.querySelector<HTMLImageElement>("img");
+    if (task.metrics.previewPath) {
+      const version = previewVersions.get(task.id) ?? 0;
+      const nextSrc = `${convertFileSrc(task.metrics.previewPath)}?v=${version}`;
+      if (!img) {
+        img = document.createElement("img");
+        img.alt = "preview";
+        img.src = nextSrc;
+        previewFrame.appendChild(img);
+      } else if (img.getAttribute("src") !== nextSrc) {
+        img.src = nextSrc;
+      }
+    } else if (img) {
+      img.remove();
+    }
+  }
 }
 
 function escapeHtml(value: string): string {
