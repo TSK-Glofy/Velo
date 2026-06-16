@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test:node": "node tests/task-format.test.mjs"
+    "test:node": "node tests/task-format.test.mjs && node tests/task-list-render.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

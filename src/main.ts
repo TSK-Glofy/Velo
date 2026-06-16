@@ -9,6 +9,7 @@ import { renderMerge } from "./merge";
 import { renderSettings } from "./settings";
 import { renderFrames } from "./frames";
 import { renderSetup } from "./setup";
+import { renderTaskList } from "./taskList";
 import {
   configErrorMessage,
   configInvoke,
@@ -146,9 +147,28 @@ async function navigate(page: string, content: HTMLElement) {
   }
 }
 
+const params = new URLSearchParams(window.location.search);
+const isTaskListWindow = params.get("window") === "task-list";
+
 window.addEventListener("DOMContentLoaded", async () => {
   const sidebar = document.querySelector("#sidebar") as HTMLElement;
   const content = document.querySelector("#content") as HTMLElement;
+
+  if (isTaskListWindow) {
+    sidebar.style.display = "none";
+    try {
+      const savedLang = await configInvoke<string>("get_language");
+      setLang(savedLang as Lang);
+      await renderTaskList(content);
+    } catch (error) {
+      if (isConfigAccessError(error)) {
+        renderConfigError(content, error);
+      } else {
+        renderFatalError(content, error);
+      }
+    }
+    return;
+  }
 
   try {
     // Load saved language before rendering any UI

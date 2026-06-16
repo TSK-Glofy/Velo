@@ -585,7 +585,21 @@ pub fn cancel_task(
 }
 
 #[tauri::command]
-pub fn open_task_list_window(_app: tauri::AppHandle) -> Result<(), String> {
+pub fn open_task_list_window(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("task-list") {
+        window.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        "task-list",
+        tauri::WebviewUrl::App("index.html?window=task-list".into()),
+    )
+    .title("Velo - Task list")
+    .inner_size(1100.0, 720.0)
+    .build()
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
