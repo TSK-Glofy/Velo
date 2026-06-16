@@ -207,6 +207,15 @@ export async function renderHome(container: HTMLElement) {
   outputFormat.addEventListener("change", () => {
     updatePlaceholder();
   });
+  outputName.addEventListener("blur", () => {
+    const raw = outputName.value.trim();
+    if (!raw) return;
+    const hasExt = /\.[A-Za-z0-9]{1,5}$/.test(raw);
+    if (!hasExt) {
+      outputName.value = `${raw}${getOutputExt()}`;
+      cache[outputName.id] = outputName.value;
+    }
+  });
 
   // Load defaults from settings (cache takes priority)
   if (!cache["copy-mode"]) {
