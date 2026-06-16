@@ -12,18 +12,6 @@ pub fn app_root_from_exe(exe: &Path) -> Result<PathBuf, String> {
         .ok_or_else(|| "Executable path has no parent directory".to_string())
 }
 
-pub fn config_file() -> Result<PathBuf, String> {
-    Ok(config_file_from_root(&app_root()?))
-}
-
-pub fn install_defaults_file() -> Result<PathBuf, String> {
-    Ok(install_defaults_file_from_root(&app_root()?))
-}
-
-pub fn jobs_file() -> Result<PathBuf, String> {
-    Ok(jobs_file_from_root(&app_root()?))
-}
-
 pub fn job_log_file(task_id: &str) -> Result<PathBuf, String> {
     Ok(job_log_file_from_root(&app_root()?, task_id))
 }
