@@ -11,6 +11,14 @@ import { renderFrames } from "./frames";
 import { renderSetup } from "./setup";
 import { renderTaskList } from "./taskList";
 import {
+  listInterruptedTasks,
+  openTaskListWindow,
+  retryInterruptedTasks,
+  type TaskSummary,
+} from "./taskApi";
+import { ask } from "@tauri-apps/plugin-dialog";
+import { t } from "./i18n";
+import {
   configErrorMessage,
   configInvoke,
   errorDetail,
@@ -150,6 +158,23 @@ async function navigate(page: string, content: HTMLElement) {
 const params = new URLSearchParams(window.location.search);
 const isTaskListWindow = params.get("window") === "task-list";
 
+async function promptRecoveryIfNeeded() {
+  try {
+    const interrupted: TaskSummary[] = await listInterruptedTasks();
+    if (interrupted.length === 0) return;
+    const retry = await ask(t("tasks.recoveryMessage"), {
+      title: t("tasks.recoveryTitle"),
+      kind: "warning",
+    });
+    if (retry) {
+      await retryInterruptedTasks();
+      await openTaskListWindow();
+    }
+  } catch {
+    // Silent: recovery is best-effort.
+  }
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
   const sidebar = document.querySelector("#sidebar") as HTMLElement;
   const content = document.querySelector("#content") as HTMLElement;
@@ -196,6 +221,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     } else {
       renderSidebar(sidebar, (page) => navigate(page, content));
       await navigate("trim", content);
+      void promptRecoveryIfNeeded();
     }
   } catch (error) {
     sidebar.style.display = "none";

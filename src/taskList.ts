@@ -1,8 +1,10 @@
 import { listen } from "@tauri-apps/api/event";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   cancelTask,
+  getTask,
   listTasks,
   retryTask,
   type TaskState,
@@ -161,7 +163,22 @@ function renderSelectedTask(container: HTMLElement) {
       if (!task) return;
       try {
         if (action === "retry") {
-          await retryTask(task.id, "useOriginal");
+          let policy: "useOriginal" | "useNumberedFallback" = "useOriginal";
+          if (task.output) {
+            const exists = await invoke<boolean>("check_file_exists", { path: task.output });
+            if (exists) {
+              const overwrite = await ask(t("tasks.retryOverwriteMessage"), {
+                title: t("tasks.retryOverwriteTitle"),
+                kind: "warning",
+              });
+              policy = overwrite ? "useOriginal" : "useNumberedFallback";
+            }
+          }
+          await retryTask(task.id, policy);
+          const refreshed = await getTask(task.id);
+          upsertTask(refreshed.summary);
+          renderTaskCards(container);
+          renderSelectedTask(container);
         } else if (action === "cancel") {
           await cancelTask(task.id);
         } else if (action === "open" && task.output) {

@@ -156,6 +156,10 @@ const translations: Record<Lang, Record<string, string>> = {
     "tasks.metric.size": "输出大小",
     "tasks.cancelFailed": "取消失败: ",
     "tasks.retryFailed": "重试失败: ",
+    "tasks.recoveryTitle": "未完成的任务",
+    "tasks.recoveryMessage": "上次有任务未完成。是否立即重试？",
+    "tasks.retryOverwriteTitle": "输出文件已存在",
+    "tasks.retryOverwriteMessage": "重试将覆盖现有的输出文件。是否覆盖？选择「否」会生成带编号的新文件名。",
 
     // Common
     "common.videoFiles": "视频文件",
@@ -314,6 +318,10 @@ const translations: Record<Lang, Record<string, string>> = {
     "tasks.metric.size": "Output size",
     "tasks.cancelFailed": "Cancel failed: ",
     "tasks.retryFailed": "Retry failed: ",
+    "tasks.recoveryTitle": "Unfinished tasks",
+    "tasks.recoveryMessage": "Some tasks did not finish last time. Retry them now?",
+    "tasks.retryOverwriteTitle": "Output file exists",
+    "tasks.retryOverwriteMessage": "Retrying will overwrite the existing output. Overwrite? Choosing No will create a numbered fallback name.",
 
     // Common
     "common.videoFiles": "Video Files",

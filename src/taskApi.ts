@@ -57,6 +57,14 @@ export function openTaskListWindow(): Promise<void> {
   return invoke<void>("open_task_list_window");
 }
 
+export function listInterruptedTasks(): Promise<TaskSummary[]> {
+  return invoke<TaskSummary[]>("list_interrupted_tasks");
+}
+
+export function retryInterruptedTasks(): Promise<TaskSummary[]> {
+  return invoke<TaskSummary[]>("retry_interrupted_tasks");
+}
+
 export function getTaskLogTail(taskId: string, lines: number): Promise<string[]> {
   return invoke<string[]>("get_task_log_tail", { taskId, lines });
 }

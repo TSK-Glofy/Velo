@@ -256,6 +256,17 @@ impl TaskRegistry {
         summaries
     }
 
+    pub fn interrupted_summaries(&self) -> Vec<TaskSummary> {
+        let mut summaries: Vec<TaskSummary> = self
+            .tasks
+            .values()
+            .filter(|d| d.summary.state == TaskState::Interrupted)
+            .map(|d| d.summary.clone())
+            .collect();
+        summaries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        summaries
+    }
+
     pub fn create_task(&mut self, request: TaskRequest) -> Result<TaskSummary, String> {
         let task_id = generate_task_id();
         let kind = kind_for_request(&request);
@@ -384,6 +395,29 @@ impl TaskRegistry {
             },
         );
         self.queue.push_back(task_id.clone());
+        task_id
+    }
+
+    #[cfg(test)]
+    pub fn insert_interrupted_for_tests(&mut self, request: TaskRequest) -> String {
+        let task_id = generate_task_id_with_suffix(self.tasks.len() as u32);
+        let kind = kind_for_request(&request);
+        let summary = TaskSummary {
+            id: task_id.clone(),
+            kind,
+            state: TaskState::Interrupted,
+            title: title_for_request(&request),
+            output: output_for_request(&request),
+            created_at: Utc::now(),
+            started_at: Some(Utc::now()),
+            finished_at: Some(Utc::now()),
+            metrics: TaskMetrics::default(),
+            error: None,
+        };
+        self.tasks.insert(
+            task_id.clone(),
+            TaskDetail { summary, request },
+        );
         task_id
     }
 
@@ -556,6 +590,22 @@ pub fn get_task_log_tail(task_id: String, lines: usize) -> Result<Vec<String>, S
     read_log_tail(&task_id, lines.min(500))
 }
 
+fn retry_task_inner(
+    app: tauri::AppHandle,
+    registry: SharedTaskRegistry,
+    task_id: String,
+    output_policy: RetryOutputPolicy,
+) -> Result<TaskSummary, String> {
+    let summary = {
+        let mut locked = registry
+            .lock()
+            .map_err(|_| "Task registry lock failed".to_string())?;
+        locked.retry(&task_id, output_policy)?
+    };
+    schedule_ready_tasks(app, registry);
+    Ok(summary)
+}
+
 #[tauri::command]
 pub fn retry_task(
     app: tauri::AppHandle,
@@ -563,14 +613,45 @@ pub fn retry_task(
     task_id: String,
     output_policy: RetryOutputPolicy,
 ) -> Result<TaskSummary, String> {
-    let summary = {
-        let mut registry = state
+    retry_task_inner(app, state.inner().clone(), task_id, output_policy)
+}
+
+#[tauri::command]
+pub fn list_interrupted_tasks(
+    state: tauri::State<SharedTaskRegistry>,
+) -> Result<Vec<TaskSummary>, String> {
+    let registry = state
+        .lock()
+        .map_err(|_| "Task registry lock failed".to_string())?;
+    Ok(registry.interrupted_summaries())
+}
+
+#[tauri::command]
+pub fn retry_interrupted_tasks(
+    app: tauri::AppHandle,
+    state: tauri::State<SharedTaskRegistry>,
+) -> Result<Vec<TaskSummary>, String> {
+    let registry_state = state.inner().clone();
+    let task_ids: Vec<String> = {
+        let locked = registry_state
             .lock()
             .map_err(|_| "Task registry lock failed".to_string())?;
-        registry.retry(&task_id, output_policy)?
+        locked
+            .interrupted_summaries()
+            .into_iter()
+            .map(|task| task.id)
+            .collect()
     };
-    schedule_ready_tasks(app, state.inner().clone());
-    Ok(summary)
+    let mut summaries = Vec::new();
+    for task_id in task_ids {
+        summaries.push(retry_task_inner(
+            app.clone(),
+            registry_state.clone(),
+            task_id,
+            RetryOutputPolicy::UseOriginal,
+        )?);
+    }
+    Ok(summaries)
 }
 
 #[tauri::command]
@@ -745,6 +826,18 @@ mod tests {
         let detail = registry.task(&task_id).unwrap();
         assert_eq!(detail.summary.id, task_id);
         assert_eq!(detail.summary.state, TaskState::Pending);
+    }
+
+    #[test]
+    fn interrupted_tasks_are_reported_for_startup_recovery() {
+        let mut registry = TaskRegistry::new_for_tests(1);
+        let id = registry
+            .insert_interrupted_for_tests(sample_trim_request("in.mp4", "out.mp4"));
+
+        let interrupted = registry.interrupted_summaries();
+
+        assert_eq!(interrupted.len(), 1);
+        assert_eq!(interrupted[0].id, id);
     }
 
     #[test]

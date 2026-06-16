@@ -50,6 +50,8 @@ pub fn run() {
             jobs::get_task,
             jobs::get_task_log_tail,
             jobs::retry_task,
+            jobs::list_interrupted_tasks,
+            jobs::retry_interrupted_tasks,
             jobs::cancel_task,
             jobs::open_task_list_window,
         ])
