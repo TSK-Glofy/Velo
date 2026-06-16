@@ -558,9 +558,32 @@ pub fn run_ffmpeg_task(
         }
     });
 
-    let status = child
-        .wait()
-        .map_err(|e| format!("等待 FFmpeg 完成失败: {}", e))?;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break s,
+            Ok(None) => {
+                let cancelled = registry
+                    .lock()
+                    .ok()
+                    .map(|r| r.cancel_requested(&task_id))
+                    .unwrap_or(false);
+                if cancelled {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = stderr_thread.join();
+                    let _ = stdout_thread.join();
+                    finish_task_cancelled(&app, &registry, &task_id);
+                    return Ok(());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            Err(e) => {
+                let err = format!("等待 FFmpeg 完成失败: {}", e);
+                finish_task_failed(&app, &registry, &task_id, &err);
+                return Err(err);
+            }
+        }
+    };
     let _ = stderr_thread.join();
     let _ = stdout_thread.join();
 
@@ -571,6 +594,22 @@ pub fn run_ffmpeg_task(
         let err = format!("FFmpeg 退出码: {}", status.code().unwrap_or(-1));
         finish_task_failed(&app, &registry, &task_id, &err);
         Err(err)
+    }
+}
+
+fn finish_task_cancelled(app: &AppHandle, registry: &SharedTaskRegistry, task_id: &str) {
+    let cancelled_at = Utc::now();
+    let _ = jobs::append_event(&TaskEvent::TaskCancelled {
+        task_id: task_id.to_string(),
+        cancelled_at,
+    });
+    if let Ok(mut r) = registry.lock() {
+        if let Some(d) = r.task_mut(task_id) {
+            d.summary.state = TaskState::Cancelled;
+            d.summary.finished_at = Some(cancelled_at);
+            let _ = app.emit("task-cancelled", &d.summary);
+        }
+        r.mark_finished(task_id);
     }
 }
 

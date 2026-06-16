@@ -730,3 +730,42 @@ Everything lives inside the install directory — portable-friendly.
 | `src-tauri/Cargo.toml` | `version = "0.10.0"` |
 | `src-tauri/tauri.conf.json` | `version: "0.10.0"` |
 | `src/settings.ts` | About card displays v0.10.0 |
+
+---
+
+# v0.10.1 — Task flow fixes + default window size
+
+## Goal
+
+After v0.10 the background task system worked but a few interaction bugs hit on first real use: Cancel didn't actually stop FFmpeg, jumping to Tasks after Start landed on a previous failed task instead of the new one, the default window was too small, and Settings was crowded with gray hint lines.
+
+## Key Changes
+
+### 1. Cancel actually kills FFmpeg
+
+`cancel_task` previously only flipped `RunningTask.cancel_requested = true`, but `run_ffmpeg_task` never read it. Fix: replaced the final `child.wait()` with a 200ms `try_wait()` poll loop that also reads the cancel flag each tick; if set, `child.kill()` + `finish_task_cancelled` (appends `TaskCancelled`, updates state, emits `task-cancelled`). Frontend gains a matching listener.
+
+`request_cancel` was also extended to handle the Pending case: it now returns `CancelOutcome::{Signaled, Dequeued{cancelled_at}, NotFound}`. The Dequeued branch in the `cancel_task` command writes the event and emits directly since there's no runner to do it.
+
+### 2. Focus the newly-created task in the Tasks page
+
+Bug: `renderTaskList` only reset `selectedTaskId` when it was null or pointed to a removed task. A previously selected failed task stayed selected even after a new task was queued. Fix: added module-level `pendingFocusTaskId` + exported `focusTaskOnNextRender(id)`. `openTaskListWindow(taskId?)` carries the id via CustomEvent detail; main.ts calls `focusTaskOnNextRender` before triggering the sidebar navigation. `renderTaskList` consumes the pending id first.
+
+home.ts / merge.ts / frames.ts now pass `summary.id` from `createTask` into `openTaskListWindow`.
+
+### 3. Default main window 1280×720
+
+`tauri.conf.json` main window dimensions bumped from 800×600. The Welcome/Setup/Tasks views all share the same main window, so the change applies everywhere.
+
+### 4. Settings hint lines removed
+
+Six `<p class="text-sm opacity-70 mb-2">${t("settings.xxxHint")}</p>` blocks (language, default resolution, default output dir, default options, max concurrent jobs, window size) deleted. The `#bg-current` path display stays — it's runtime state, not a hint.
+
+## Version Number Update
+
+| File | Field |
+|------|-------|
+| `package.json` | `version: "0.10.1"` |
+| `src-tauri/Cargo.toml` | `version = "0.10.1"` |
+| `src-tauri/tauri.conf.json` | `version: "0.10.1"` |
+| `src/settings.ts` | About card displays v0.10.1 |

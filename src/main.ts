@@ -9,7 +9,7 @@ import { renderMerge } from "./merge";
 import { renderSettings } from "./settings";
 import { renderFrames } from "./frames";
 import { renderSetup } from "./setup";
-import { renderTaskList } from "./taskList";
+import { focusTaskOnNextRender, renderTaskList } from "./taskList";
 import {
   listInterruptedTasks,
   retryInterruptedTasks,
@@ -209,14 +209,16 @@ window.addEventListener("DOMContentLoaded", async () => {
     } else {
       renderSidebar(sidebar, (page) => navigate(page, content));
       await navigate("trim", content);
-      const goToTasks = () => {
+      const goToTasks = (event?: Event) => {
+        const taskId = event instanceof CustomEvent ? (event.detail as string | undefined) : undefined;
+        if (taskId) focusTaskOnNextRender(taskId);
         const btn = sidebar.querySelector<HTMLButtonElement>(
           `.sidebar-btn[data-page="tasks"]`,
         );
         btn?.click();
       };
       window.addEventListener("velo:open-tasks", goToTasks);
-      void promptRecoveryIfNeeded(goToTasks);
+      void promptRecoveryIfNeeded(() => goToTasks());
     }
   } catch (error) {
     sidebar.style.display = "none";

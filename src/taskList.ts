@@ -17,7 +17,12 @@ let selectedTaskId: string | null = null;
 let tasks: TaskSummary[] = [];
 let listenersBound = false;
 let renderedStructureKey: string | null = null;
+let pendingFocusTaskId: string | null = null;
 const previewVersions = new Map<string, number>();
+
+export function focusTaskOnNextRender(taskId: string) {
+  pendingFocusTaskId = taskId;
+}
 
 function structureKey(task: TaskSummary): string {
   return `${task.id}|${task.state}|${task.error ? "e" : "n"}|${task.output ?? ""}`;
@@ -35,7 +40,10 @@ export async function renderTaskList(container: HTMLElement) {
   `;
 
   tasks = await listTasks();
-  if (selectedTaskId === null || !tasks.some((task) => task.id === selectedTaskId)) {
+  if (pendingFocusTaskId && tasks.some((task) => task.id === pendingFocusTaskId)) {
+    selectedTaskId = pendingFocusTaskId;
+    pendingFocusTaskId = null;
+  } else if (selectedTaskId === null || !tasks.some((task) => task.id === selectedTaskId)) {
     selectedTaskId = tasks[0]?.id ?? null;
   }
   renderTaskCards(container);
@@ -59,6 +67,11 @@ export async function renderTaskList(container: HTMLElement) {
       if (event.payload.id === selectedTaskId) renderSelectedTask(container);
     });
     await listen<TaskSummary>("task-failed", (event) => {
+      upsertTask(event.payload);
+      renderTaskCards(container);
+      if (event.payload.id === selectedTaskId) renderSelectedTask(container);
+    });
+    await listen<TaskSummary>("task-cancelled", (event) => {
       upsertTask(event.payload);
       renderTaskCards(container);
       if (event.payload.id === selectedTaskId) renderSelectedTask(container);

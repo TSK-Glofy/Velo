@@ -53,8 +53,8 @@ export function cancelTask(taskId: string): Promise<boolean> {
   return invoke<boolean>("cancel_task", { taskId });
 }
 
-export function openTaskListWindow(): Promise<void> {
-  window.dispatchEvent(new CustomEvent("velo:open-tasks"));
+export function openTaskListWindow(taskId?: string): Promise<void> {
+  window.dispatchEvent(new CustomEvent("velo:open-tasks", { detail: taskId }));
   return Promise.resolve();
 }
 

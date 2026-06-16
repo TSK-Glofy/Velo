@@ -213,6 +213,12 @@ pub struct RunningTask {
     pub cancel_requested: bool,
 }
 
+pub enum CancelOutcome {
+    Signaled,
+    Dequeued { cancelled_at: chrono::DateTime<Utc> },
+    NotFound,
+}
+
 pub struct TaskRegistry {
     tasks: HashMap<String, TaskDetail>,
     queue: VecDeque<String>,
@@ -323,13 +329,28 @@ impl TaskRegistry {
         self.running.remove(task_id);
     }
 
-    pub fn request_cancel(&mut self, task_id: &str) -> bool {
+    pub fn request_cancel(&mut self, task_id: &str) -> CancelOutcome {
         if let Some(running) = self.running.get_mut(task_id) {
             running.cancel_requested = true;
-            true
-        } else {
-            false
+            return CancelOutcome::Signaled;
         }
+        if let Some(pos) = self.queue.iter().position(|id| id == task_id) {
+            self.queue.remove(pos);
+            let cancelled_at = Utc::now();
+            if let Some(detail) = self.tasks.get_mut(task_id) {
+                detail.summary.state = TaskState::Cancelled;
+                detail.summary.finished_at = Some(cancelled_at);
+            }
+            return CancelOutcome::Dequeued { cancelled_at };
+        }
+        CancelOutcome::NotFound
+    }
+
+    pub fn cancel_requested(&self, task_id: &str) -> bool {
+        self.running
+            .get(task_id)
+            .map(|r| r.cancel_requested)
+            .unwrap_or(false)
     }
 
     pub fn retry(
@@ -656,13 +677,33 @@ pub fn retry_interrupted_tasks(
 
 #[tauri::command]
 pub fn cancel_task(
+    app: tauri::AppHandle,
     state: tauri::State<SharedTaskRegistry>,
     task_id: String,
 ) -> Result<bool, String> {
-    let mut registry = state
-        .lock()
-        .map_err(|_| "Task registry lock failed".to_string())?;
-    Ok(registry.request_cancel(&task_id))
+    use tauri::Emitter;
+    let outcome = {
+        let mut registry = state
+            .lock()
+            .map_err(|_| "Task registry lock failed".to_string())?;
+        registry.request_cancel(&task_id)
+    };
+    match outcome {
+        CancelOutcome::Signaled => Ok(true),
+        CancelOutcome::Dequeued { cancelled_at } => {
+            let _ = append_event(&TaskEvent::TaskCancelled {
+                task_id: task_id.clone(),
+                cancelled_at,
+            });
+            if let Ok(r) = state.lock() {
+                if let Some(d) = r.task(&task_id) {
+                    let _ = app.emit("task-cancelled", &d.summary);
+                }
+            }
+            Ok(true)
+        }
+        CancelOutcome::NotFound => Ok(false),
+    }
 }
 
 

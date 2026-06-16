@@ -770,3 +770,85 @@ ffmpeg -ss <当前时间> -i <输入> -vf scale=320:-1 -frames:v 1 preview.jpg
 | `src-tauri/Cargo.toml` | `version = "0.10.0"` |
 | `src-tauri/tauri.conf.json` | `version: "0.10.0"` |
 | `src/settings.ts` | 关于卡片显示 v0.10.0 |
+
+---
+
+# v0.10.1 — 任务流交互修复 + 默认窗口尺寸
+
+## 目标
+
+v0.10 把后台任务系统铺好后，实测发现几个交互坑：取消按钮点了不真停 FFmpeg、点击 Start 跳到任务页时选中的是上次失败的旧任务、默认窗口太小、Settings 灰色提示文字啰嗦。一次性修掉。
+
+## 关键改动
+
+### 1. 取消真正能停 FFmpeg
+
+v0.10 里 `cancel_task` 只是把 `RunningTask.cancel_requested` 置 true，但 `run_ffmpeg_task` 从不读这个 flag —— 子进程照跑。
+
+修复：把 `run_ffmpeg_task` 末尾的 `child.wait()` 换成 200ms 间隔的 `try_wait()` 轮询循环，每轮顺便锁 registry 读 `cancel_requested(&task_id)`：
+
+```rust
+let status = loop {
+    match child.try_wait() {
+        Ok(Some(s)) => break s,
+        Ok(None) => {
+            if registry.lock().ok().map(|r| r.cancel_requested(&task_id)).unwrap_or(false) {
+                let _ = child.kill();
+                let _ = child.wait();
+                finish_task_cancelled(&app, &registry, &task_id);
+                return Ok(());
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        Err(e) => { ... }
+    }
+};
+```
+
+新增 `finish_task_cancelled` 负责 append `TaskCancelled` 事件、改状态、`mark_finished`、emit `task-cancelled` 给前端。前端 `taskList.ts` 新增对应监听。
+
+顺带处理"取消还在 queue 里的 Pending 任务"——`request_cancel` 改返回 `CancelOutcome` 枚举：`Signaled` / `Dequeued { cancelled_at }` / `NotFound`。Dequeued 路径在 `cancel_task` 命令里直接 append 事件 + emit。
+
+### 2. 创建任务后焦点要落在新任务上
+
+bug：进入 Tasks 页 `renderTaskList` 里有
+
+```ts
+if (selectedTaskId === null || !tasks.some(t => t.id === selectedTaskId)) {
+  selectedTaskId = tasks[0]?.id ?? null;
+}
+```
+
+如果上次访问 Tasks 页时点过某个失败任务，`selectedTaskId` 保留指向那条旧任务，且新建任务后它仍在列表中 —— 条件不满足，焦点不动，右面板继续显示旧失败任务。
+
+修复：引入 `pendingFocusTaskId` 模块变量 + 导出 `focusTaskOnNextRender(id)`。`openTaskListWindow(taskId?)` 接受可选 id，通过 `CustomEvent` detail 传到 main.ts，main.ts 调 `focusTaskOnNextRender`，下次 `renderTaskList` 优先消费这个 id：
+
+```ts
+if (pendingFocusTaskId && tasks.some(t => t.id === pendingFocusTaskId)) {
+  selectedTaskId = pendingFocusTaskId;
+  pendingFocusTaskId = null;
+} else if (selectedTaskId === null || !tasks.some(...)) {
+  selectedTaskId = tasks[0]?.id ?? null;
+}
+```
+
+home.ts / merge.ts / frames.ts 拿 `createTask` 返回的 `summary.id` 传给 `openTaskListWindow(summary.id)`。
+
+### 3. 默认窗口 1280×720
+
+`tauri.conf.json` 主窗口 `width: 800 / height: 600` → `1280 / 720`。Welcome / Setup / Tasks 等所有页面共享这一个主窗口，所以同步生效。
+
+### 4. Settings 删提示行
+
+页面里 6 个 `<p class="text-sm opacity-70 mb-2">${t("settings.xxxHint")}</p>` 全部删除（语言、默认分辨率、默认输出目录、默认选项、并发数、窗口尺寸）。i18n 里对应的 `xxxHint` key 暂留不影响显示。
+
+`#bg-current`（显示当前背景图路径）保留 —— 这是动态状态而非解释文字。
+
+## 版本号统一更新
+
+| 文件 | 字段 |
+|------|------|
+| `package.json` | `version: "0.10.1"` |
+| `src-tauri/Cargo.toml` | `version = "0.10.1"` |
+| `src-tauri/tauri.conf.json` | `version: "0.10.1"` |
+| `src/settings.ts` | 关于卡片显示 v0.10.1 |

@@ -147,7 +147,7 @@ export function renderFrames(container: HTMLElement) {
     }
 
     try {
-      await createTask({
+      const summary = await createTask({
         kind: "frames",
         input: inputPath.value,
         outputDir: outputPath.value,
@@ -156,7 +156,7 @@ export function renderFrames(container: HTMLElement) {
         fps: fps || null,
         format,
       });
-      await openTaskListWindow();
+      await openTaskListWindow(summary.id);
       status.textContent = t("tasks.created");
       status.className = "text-sm mt-2 text-success";
     } catch (e) {

@@ -1,6 +1,6 @@
 [package]
 name = "velo"
-version = "0.10.0"
+version = "0.10.1"
 description = "FFmpeg GUI wrapper built with Tauri and Rust. Lightweight, cross-platform, and blazing fast."
 authors = ["Glofy"]
 edition = "2021"

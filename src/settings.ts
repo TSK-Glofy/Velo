@@ -30,7 +30,6 @@ export async function renderSettings(container: HTMLElement) {
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
             <h2 class="card-title text-lg">${t("settings.language")}</h2>
-            <p class="text-sm opacity-70 mb-2">${t("settings.languageHint")}</p>
             <select id="lang-select" class="select w-full">
               <option value="zh" ${currentLang === "zh" ? "selected" : ""}>中文</option>
               <option value="en" ${currentLang === "en" ? "selected" : ""}>English</option>
@@ -54,7 +53,6 @@ export async function renderSettings(container: HTMLElement) {
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
             <h2 class="card-title text-lg">${t("settings.defaultResolution")}</h2>
-            <p class="text-sm opacity-70 mb-2">${t("settings.resolutionHint")}</p>
             <select id="resolution-select" class="select w-full">
               <option value="">${t("settings.resolutionOriginal")}</option>
               <option value="1920x1080">1920x1080 (1080p)</option>
@@ -70,7 +68,6 @@ export async function renderSettings(container: HTMLElement) {
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
             <h2 class="card-title text-lg">${t("settings.defaultOutputDir")}</h2>
-            <p class="text-sm opacity-70 mb-2">${t("settings.outputDirHint")}</p>
             <div class="join w-full">
               <input id="output-dir-path" type="text" class="input join-item flex-1"
                 placeholder="${t("settings.outputDirPlaceholder")}" readonly value="${currentOutputDir || ""}" />
@@ -83,7 +80,6 @@ export async function renderSettings(container: HTMLElement) {
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
             <h2 class="card-title text-lg">${t("settings.defaultOptions")}</h2>
-            <p class="text-sm opacity-70 mb-2">${t("settings.defaultOptionsHint")}</p>
             <label class="flex items-center gap-2 cursor-pointer">
               <input id="default-copy-mode" type="checkbox" class="checkbox" ${currentCopyMode ? "checked" : ""} />
               <span>${t("settings.copyOnly")}</span>
@@ -99,7 +95,6 @@ export async function renderSettings(container: HTMLElement) {
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
             <h2 class="card-title text-lg">${t("settings.maxConcurrentJobs")}</h2>
-            <p class="text-sm opacity-70 mb-2">${t("settings.maxConcurrentJobsHint")}</p>
             <select id="max-jobs-select" class="select w-full">
               <option value="1" ${currentMaxJobs === 1 ? "selected" : ""}>1</option>
               <option value="2" ${currentMaxJobs === 2 ? "selected" : ""}>2</option>
@@ -113,7 +108,6 @@ export async function renderSettings(container: HTMLElement) {
         <div class="card bg-base-200/80 shadow-md mb-6">
           <div class="card-body">
             <h2 class="card-title text-lg">${t("settings.windowSize")}</h2>
-            <p class="text-sm opacity-70 mb-2">${t("settings.windowSizeHint")}</p>
             <select id="winsize-select" class="select w-full">
               <option value="">${t("settings.windowSizeDefault")}</option>
               <option value="1600x900">1600x900</option>
@@ -147,7 +141,7 @@ export async function renderSettings(container: HTMLElement) {
               <img src="/icon.png" alt="Velo" class="w-16 h-16 rounded-xl shrink-0" />
               <div>
                 <h3 class="text-lg font-bold">Velo</h3>
-                <p class="text-sm opacity-70">v0.10.0</p>
+                <p class="text-sm opacity-70">v0.10.1</p>
                 <p class="text-sm opacity-70">TSK-Glofy</p>
               </div>
             </div>

@@ -175,12 +175,12 @@ export function renderMerge(container: HTMLElement) {
         if (!overwrite) return;
       }
 
-      await createTask({
+      const summary = await createTask({
         kind: "merge",
         inputs: cache.files,
         output: outputPath.value,
       });
-      await openTaskListWindow();
+      await openTaskListWindow(summary.id);
       status.textContent = t("tasks.created");
       status.className = "text-sm mt-2 text-success";
     } catch (e) {

@@ -308,7 +308,7 @@ export async function renderHome(container: HTMLElement) {
       }
 
       const resolution = await configInvoke<string | null>("get_default_resolution");
-      await createTask({
+      const summary = await createTask({
         kind: "trim",
         input: inputPath.value,
         output: finalOutput,
@@ -319,7 +319,7 @@ export async function renderHome(container: HTMLElement) {
         codecMode: copyMode.checked ? "copy" : "reencode",
         rotation: rotation.value || null,
       });
-      await openTaskListWindow();
+      await openTaskListWindow(summary.id);
       status.textContent = t("tasks.created");
       status.className = "text-sm mt-2 text-success";
     } catch (e) {
