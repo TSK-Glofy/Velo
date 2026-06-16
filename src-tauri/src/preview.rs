@@ -20,7 +20,7 @@ pub fn build_preview_args(out_time: &str, input: &str, output: &str) -> Vec<Stri
         "-frames:v".into(),
         "1".into(),
         "-vf".into(),
-        "scale=320:-1".into(),
+        "scale=640:-1".into(),
         "-y".into(),
         output.into(),
     ]
@@ -98,7 +98,7 @@ mod tests {
                 "-frames:v",
                 "1",
                 "-vf",
-                "scale=320:-1",
+                "scale=640:-1",
                 "-y",
                 "preview.jpg",
             ]

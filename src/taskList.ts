@@ -16,6 +16,7 @@ import { t } from "./i18n";
 let selectedTaskId: string | null = null;
 let tasks: TaskSummary[] = [];
 let listenersBound = false;
+const previewVersions = new Map<string, number>();
 
 export async function renderTaskList(container: HTMLElement) {
   container.innerHTML = `
@@ -64,6 +65,10 @@ export async function renderTaskList(container: HTMLElement) {
         if (task) {
           task.metrics = { ...task.metrics, previewPath: event.payload.previewPath };
         }
+        previewVersions.set(
+          event.payload.taskId,
+          (previewVersions.get(event.payload.taskId) ?? 0) + 1,
+        );
         if (event.payload.taskId === selectedTaskId) renderSelectedTask(container);
       },
     );
@@ -123,8 +128,9 @@ function renderSelectedTask(container: HTMLElement) {
     return;
   }
   const percent = Math.max(0, Math.min(100, task.metrics.percent ?? 0));
+  const previewVersion = previewVersions.get(task.id) ?? 0;
   const preview = task.metrics.previewPath
-    ? `<img src="${escapeAttr(convertFileSrc(task.metrics.previewPath))}" alt="preview" />`
+    ? `<img src="${escapeAttr(convertFileSrc(task.metrics.previewPath))}?v=${previewVersion}" alt="preview" />`
     : "";
   const canRetry =
     task.state === "failed" ||
