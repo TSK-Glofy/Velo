@@ -31,11 +31,15 @@
     "targets": "all",
     "windows": {
       "wix": {
-        "language": ["en-US", "zh-CN"]
+        "language": ["en-US", "zh-CN"],
+        "fragmentPaths": ["installer/wix-install-json.wxs"],
+        "componentGroupRefs": ["VeloInstallDefaultsGroup"]
       },
       "nsis": {
+        "installMode": "currentUser",
         "languages": ["English", "SimpChinese"],
-        "displayLanguageSelector": true
+        "displayLanguageSelector": true,
+        "installerHooks": "installer/nsis-hooks.nsh"
       }
     },
     "icon": [

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Directory Id="VeloConfigDir" Name="config">
+        <Component Id="VeloInstallDefaults" Guid="*">
+          <File Id="VeloInstallDefaultsFile" Source="installer\install.json" KeyPath="yes" Name="install.json" />
+        </Component>
+      </Directory>
+    </DirectoryRef>
+  </Fragment>
+  <Fragment>
+    <ComponentGroup Id="VeloInstallDefaultsGroup">
+      <ComponentRef Id="VeloInstallDefaults" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>
