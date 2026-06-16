@@ -7,9 +7,16 @@ mod task_types;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let max_concurrent = config::get_max_concurrent_jobs().unwrap_or(1);
+    let registry = jobs::TaskRegistry::from_journal(max_concurrent)
+        .unwrap_or_else(|_| jobs::TaskRegistry::empty(max_concurrent));
+    let shared_registry: jobs::SharedTaskRegistry =
+        std::sync::Arc::new(std::sync::Mutex::new(registry));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(shared_registry)
         // 注册所有命令，前端通过 invoke("命令名") 调用
         .invoke_handler(tauri::generate_handler![
             config::get_ffmpeg_path,
@@ -36,6 +43,13 @@ pub fn run() {
             ffmpeg::trim_video,
             ffmpeg::merge_videos,
             ffmpeg::extract_frames,
+            jobs::create_task,
+            jobs::list_tasks,
+            jobs::get_task,
+            jobs::get_task_log_tail,
+            jobs::retry_task,
+            jobs::cancel_task,
+            jobs::open_task_list_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

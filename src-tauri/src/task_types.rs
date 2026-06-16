@@ -80,6 +80,13 @@ pub struct TaskDetail {
     pub request: TaskRequest,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RetryOutputPolicy {
+    UseOriginal,
+    UseNumberedFallback,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum TaskEvent {
