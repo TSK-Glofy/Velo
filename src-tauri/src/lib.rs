@@ -26,6 +26,7 @@ pub fn run() {
             config::get_background_image,
             config::set_background_image,
             config::import_background_image,
+            config::list_background_images,
             config::clear_background_image,
             config::get_max_concurrent_jobs,
             config::set_max_concurrent_jobs,

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -109,11 +109,9 @@ export async function renderSettings(container: HTMLElement) {
           <div class="card-body">
             <h2 class="card-title text-lg">${t("settings.windowSize")}</h2>
             <select id="winsize-select" class="select w-full">
-              <option value="">${t("settings.windowSizeDefault")}</option>
+              <option value="">${t("settings.windowSizeDefault")} (1280x720)</option>
               <option value="1600x900">1600x900</option>
               <option value="1280x720">1280x720</option>
-              <option value="1024x768">1024x768</option>
-              <option value="800x600">800x600</option>
             </select>
             <div id="winsize-msg" class="text-sm mt-1"></div>
           </div>
@@ -125,11 +123,23 @@ export async function renderSettings(container: HTMLElement) {
             <p id="bg-current" class="text-sm opacity-70 mb-2">${t("settings.bgCurrent")}${currentBg || t("settings.bgNotSet")}</p>
             <div class="flex gap-2">
               <button id="bg-browse" class="btn">${t("settings.bgSelect")}</button>
+              <button id="bg-pick" class="btn btn-outline">${t("settings.bgPick")}</button>
               <button id="bg-clear" class="btn btn-outline">${t("settings.bgClear")}</button>
             </div>
             <div id="bg-msg" class="text-sm mt-1"></div>
           </div>
         </div>
+
+        <dialog id="bg-modal" class="modal">
+          <div class="modal-box max-w-2xl">
+            <h3 class="font-bold text-lg mb-3">${t("settings.bgPickerTitle")}</h3>
+            <div id="bg-grid" class="bg-thumb-grid"></div>
+            <div class="modal-action">
+              <button id="bg-modal-close" class="btn">${t("settings.bgClose")}</button>
+            </div>
+          </div>
+          <form method="dialog" class="modal-backdrop"><button>close</button></form>
+        </dialog>
       </div>
 
       <!-- Right column: about -->
@@ -302,6 +312,56 @@ export async function renderSettings(container: HTMLElement) {
       bgCurrent.textContent = `${t("settings.bgCurrent")}${t("settings.bgNotSet")}`;
       bgMsg.textContent = t("settings.bgCleared");
       bgMsg.className = "text-sm mt-1 text-success";
+    } catch (e) {
+      bgMsg.textContent = `${t("settings.failed")}${e}`;
+      bgMsg.className = "text-sm mt-1 text-error";
+    }
+  });
+
+  const bgModal = container.querySelector("#bg-modal") as HTMLDialogElement;
+  const bgGrid = container.querySelector("#bg-grid") as HTMLElement;
+  container.querySelector("#bg-modal-close")!.addEventListener("click", () => {
+    bgModal.close();
+  });
+  container.querySelector("#bg-pick")!.addEventListener("click", async () => {
+    try {
+      const images = await invoke<string[]>("list_background_images");
+      if (images.length === 0) {
+        bgGrid.innerHTML = `<div class="col-span-3 text-sm opacity-70">${t("settings.bgEmpty")}</div>`;
+      } else {
+        bgGrid.innerHTML = images
+          .map((path) => {
+            const safe = path
+              .replace(/&/g, "&amp;")
+              .replace(/"/g, "&quot;");
+            const name = path.split(/[/\\]/).pop() ?? path;
+            return `
+              <button type="button" class="bg-thumb" data-path="${safe}">
+                <img src="${convertFileSrc(path)}" alt="${safe}" loading="lazy" />
+                <span class="bg-thumb-name">${name.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>
+              </button>
+            `;
+          })
+          .join("");
+        bgGrid.querySelectorAll<HTMLButtonElement>("button[data-path]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const target = btn.dataset.path;
+            if (!target) return;
+            try {
+              await invoke("set_background_image", { path: target });
+              await applyBackground();
+              bgCurrent.textContent = `${t("settings.bgCurrent")}${target}`;
+              bgMsg.textContent = t("settings.bgUpdated");
+              bgMsg.className = "text-sm mt-1 text-success";
+              bgModal.close();
+            } catch (e) {
+              bgMsg.textContent = `${t("settings.failed")}${e}`;
+              bgMsg.className = "text-sm mt-1 text-error";
+            }
+          });
+        });
+      }
+      bgModal.showModal();
     } catch (e) {
       bgMsg.textContent = `${t("settings.failed")}${e}`;
       bgMsg.className = "text-sm mt-1 text-error";

@@ -44,16 +44,19 @@ fn probe_video_duration(ffmpeg_path: &str, input: &str) -> Result<String, String
 
 fn probe_duration_with_ffprobe(ffmpeg_path: &str, input: &str) -> Result<String, String> {
     let ffprobe_path = ffprobe_path_from_ffmpeg(ffmpeg_path);
-    let output = Command::new(&ffprobe_path)
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=nokey=1:noprint_wrappers=1",
-            input,
-        ])
+    let mut cmd = Command::new(&ffprobe_path);
+    cmd.args([
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=nokey=1:noprint_wrappers=1",
+        input,
+    ]);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+    let output = cmd
         .output()
         .map_err(|e| format!("Failed to probe duration (ffprobe): {}", e))?;
 
@@ -76,10 +79,13 @@ fn probe_duration_with_ffprobe(ffmpeg_path: &str, input: &str) -> Result<String,
 }
 
 fn probe_duration_with_ffmpeg(ffmpeg_path: &str, input: &str) -> Result<String, String> {
-    let output = Command::new(ffmpeg_path)
-        .args(["-i", input])
+    let mut cmd = Command::new(ffmpeg_path);
+    cmd.args(["-i", input])
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+    let output = cmd
         .output()
         .map_err(|e| format!("Failed to probe duration (ffmpeg): {}", e))?;
 

@@ -127,14 +127,22 @@ pub fn get_background_image() -> Result<Option<String>, String> {
     Ok(Some(resolved.to_string_lossy().to_string()))
 }
 
-/// 兼容旧调用：保存绝对路径
+/// 保存背景图路径。若在安装根目录内，自动转为相对路径以保证便携。
 #[tauri::command]
 pub fn set_background_image(path: String) -> Result<String, String> {
     if !std::path::Path::new(&path).exists() {
         return Err("文件不存在".to_string());
     }
+    let stored = match crate::paths::app_root() {
+        Ok(root) => std::path::Path::new(&path)
+            .strip_prefix(&root)
+            .ok()
+            .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+            .unwrap_or(path),
+        Err(_) => path,
+    };
     let mut config = load_config()?;
-    config.background_image = Some(path);
+    config.background_image = Some(stored);
     save_config(&config)?;
     Ok("保存成功".to_string())
 }
@@ -200,6 +208,26 @@ pub fn import_background_image_for_root(
 pub fn import_background_image(path: String) -> Result<String, String> {
     let root = crate::paths::app_root()?;
     import_background_image_for_root(&root, path)
+}
+
+/// 列出 <install>/pic/background/ 下的所有图片（绝对路径，按文件名排序）
+#[tauri::command]
+pub fn list_background_images() -> Result<Vec<String>, String> {
+    let root = crate::paths::app_root()?;
+    let bg_dir = crate::paths::background_dir_from_root(&root);
+    if !bg_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let entries = fs::read_dir(&bg_dir).map_err(|e| e.to_string())?;
+    let mut items: Vec<String> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            items.push(path.to_string_lossy().to_string());
+        }
+    }
+    items.sort();
+    Ok(items)
 }
 
 /// 清除背景图设置（仅从 config 移除，不删除文件）
