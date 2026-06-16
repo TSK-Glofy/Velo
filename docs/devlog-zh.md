@@ -611,3 +611,162 @@ Tauri 打包时从 `src-tauri/icons/` 目录读取图标文件，嵌入到最终
 | `src-tauri/Cargo.toml` | `version = "0.9.0"` |
 | `src-tauri/tauri.conf.json` | `version: "0.9.0"` |
 | `src/settings.ts` | 关于卡片显示 v0.9.0 |
+
+---
+
+# v0.10.0 — 后台任务系统 + 任务列表窗口
+
+## 目标
+
+把"按按钮 → 阻塞等 FFmpeg → 完事"的同步流程，换成"提交任务 → 立刻返回 → 独立窗口看进度 → 崩了能恢复"。同时让 Trim/Merge/Frames 三个页面共享同一套任务底座，并把多并发、可重试、可取消、可预览这些常见需求一次性补齐。
+
+## 整体架构
+
+新增四个 Rust 模块组成任务子系统：
+
+```
+task_types.rs  ── 共享数据类型（TaskRequest/Summary/Detail/Metrics/Event）
+jobs.rs        ── JSONL 事件日志 + 内存注册表 + 调度器 + Tauri 命令
+ffmpeg.rs      ── 在原 trim/merge/frames 之外新增 build_task_command + run_ffmpeg_task
+preview.rs     ── 单实例守卫的预览抽帧
+```
+
+前端新增 `taskApi.ts` / `taskFormat.ts` / `taskList.ts` 三件套，加一个二级窗口 `?window=task-list` 路由。
+
+## 关键设计决策
+
+### 1. JSONL 事件日志 + 启动回放
+
+任务状态不是直接存当前快照，而是**每个事件追加一行 JSON** 到 `<安装目录>/jobs/jobs.jsonl`：
+
+```json
+{"type":"taskCreated","taskId":"task_20260617_153022_a7f3","kind":"trim",...}
+{"type":"taskStarted","taskId":"task_20260617_153022_a7f3",...}
+{"type":"taskProgress","taskId":"...","metrics":{...},...}
+{"type":"taskCompleted","taskId":"...",...}
+```
+
+**为什么**：
+- append-only 文件不需要锁，崩了也不会写半行 JSON
+- 启动时回放整个日志重建内存状态；replay 时若发现某任务还卡在 `Running` 而进程已不在，自动标记 `Interrupted` —— 自然就有了崩溃恢复语义
+- 不依赖任何外部数据库，零运维
+
+### 2. 注册表 + 调度器 + 真线程
+
+`TaskRegistry` 是 `Arc<Mutex<...>>` 共享状态，含：
+- `tasks: HashMap<id, TaskDetail>` —— 所有任务
+- `queue: VecDeque<id>` —— 等待跑的
+- `running: HashMap<id, RunningTask>` —— 跑着的（含 `cancel_requested` 标志）
+- `max_concurrent_jobs` —— 并发上限（1~4 clamp）
+
+调度逻辑刻意简单：`schedule_ready_tasks(app, registry)` 在并发上限内 `pop_startable_task_ids()`，对每个 id 起一个 `std::thread::spawn`，跑完后**递归调度**下一批。没有用 tokio runtime，因为 FFmpeg 是阻塞 IO + 进程 wait，原生线程反而最直白。
+
+### 3. FFmpeg 命令构建器分层
+
+旧的 `trim_video` / `merge_videos` / `extract_frames` 三个 Tauri 命令保留没动，新代码走另一条路：
+
+```
+build_trim_command / build_merge_command / build_frames_command
+        ↓ 都返回 BuiltFfmpegTask { args, total_us, primary_input, output, ... }
+build_task_command(ffmpeg_path, &TaskRequest)
+        ↓
+run_ffmpeg_task(app, registry, task_id)
+```
+
+**为什么分两层**：构建参数和执行进程职责完全不同，分开后单测可以只测参数构造（不需要真的有 FFmpeg）。`ProgressParser` 也是同样的考虑 —— 把 stdout 解析抽出来纯函数化，单测覆盖速率/帧/百分比计算。
+
+### 4. 预览抽帧：单实例守卫
+
+每次任务的进度事件触发时（约每秒），后台 spawn 一个独立 FFmpeg 进程：
+
+```
+ffmpeg -ss <当前时间> -i <输入> -vf scale=320:-1 -frames:v 1 preview.jpg
+```
+
+`PreviewState` 用 `Arc<Mutex<HashSet<task_id>>>` 守卫：**上一帧没抽完就跳过这次请求**。这避免了进度风暴时几十个 ffmpeg 同时抽帧把 CPU 打满。抽好后 emit `task-preview-updated` 给前端，前端原地刷新 `<img>`。
+
+### 5. 二级窗口而不是模态对话框
+
+任务列表是独立窗口（`WebviewWindowBuilder` + `?window=task-list` URL 参数）：
+
+- 主窗口可以继续提交新任务，不阻塞
+- 重启 app 后任务窗口手动开（或主窗口自动重开），数据从 JSONL 重建
+- `main.ts` 在 DOMContentLoaded 时检测 URL 参数走两套不同的初始化分支，共享同一份 `index.html` + bundle
+
+### 6. 重试的两条策略
+
+失败任务点 Retry，如果输出文件还在，弹窗问：
+- 「是」→ `useOriginal`：复用原路径，覆盖
+- 「否」→ `useNumberedFallback`：自动生成 `old_file(2).mp4`（已有 `old_file(1).mp4` 时跳到 2）
+
+重试**复用同一个 task_id** —— 历史进度被清空，重新 `Pending` 入队。前端的卡片选中状态因此能保持不变。
+
+### 7. 崩溃恢复
+
+启动主窗口时调 `list_interrupted_tasks`，非空就弹 ask 对话框；选「是」批量 `retry_interrupted_tasks` 全部用 `useOriginal` 策略入队 + 打开任务列表窗口。
+
+## 重要文件清单
+
+### Rust 后端
+
+| 文件 | 职责 |
+|------|------|
+| `task_types.rs` | TaskKind / State / Request / Metrics / Summary / Detail / Event / RetryOutputPolicy |
+| `jobs.rs` | JSONL append/replay + TaskRegistry + 调度器 + 8 个 Tauri 命令 |
+| `preview.rs` | build_preview_args + PreviewState + request_preview（单实例守卫） |
+| `ffmpeg.rs` | 新增 build_task_command 系列 + run_ffmpeg_task + ProgressParser |
+| `paths.rs` | `<install>/jobs/`, `<install>/preview/` 等路径辅助（v0.9.x 已有） |
+
+### 前端
+
+| 文件 | 职责 |
+|------|------|
+| `taskApi.ts` | Tauri 命令的 TS 包装（createTask/listTasks/retryTask/...） |
+| `taskFormat.ts` | 日期、状态 class、metric 占位符等纯格式化函数 |
+| `taskList.ts` | 任务列表窗口渲染器；监听 task-progress/completed/failed/preview-updated 事件 |
+| `main.ts` | 路由 `?window=task-list`；启动时弹崩溃恢复对话框 |
+| `home.ts` / `merge.ts` / `frames.ts` | 改成调 createTask + openTaskListWindow，删除页内进度条 |
+
+### 测试
+
+| 文件 | 内容 |
+|------|------|
+| `cargo test` | jobs replay / scheduler / retry / next_available_output / interrupted_summaries 等 31 个 |
+| `tests/task-format.test.mjs` | 前端格式化函数单测 |
+| `tests/task-list-render.test.mjs` | 检查 styles.css 含必要 class 名 |
+| `tests/source-pages-task-api.test.mjs` | 检查三个源页面都改成了 createTask 路径 |
+
+## 数据布局（v0.9.x 已立，v0.10 才真用上）
+
+```
+<install root>/
+├─ config/
+│   ├─ config.json      用户配置
+│   └─ install.json     安装时种入的 locale
+├─ jobs/
+│   ├─ jobs.jsonl       事件日志
+│   └─ logs/
+│       └─ <task_id>.log  每个任务的 stderr 全量
+├─ preview/
+│   └─ <task_id>.jpg    最新预览帧
+└─ pic/
+    └─ background/      用户导入的背景图
+```
+
+所有数据都在安装目录内，便于绿色版/便携使用。
+
+## 已知遗留
+
+- 旧的 `trim_video` / `merge_videos` / `extract_frames` Tauri 命令仍保留但前端不再调用，下版本可清理
+- 老的 `ffmpeg-status` / `ffmpeg-progress` 事件名后端仍 emit（兼容旧代码），但前端已不监听
+- 取消任务的 `cancel_requested` 标志已写入 `RunningTask`，但 `run_ffmpeg_task` 中尚未周期性检查并 kill 子进程 —— 当前 cancel_task 只是标记，没真正终止 FFmpeg
+- 安装器层面的 locale 种入（Task 12）尚未完成
+
+## 版本号统一更新
+
+| 文件 | 字段 |
+|------|------|
+| `package.json` | `version: "0.10.0"` |
+| `src-tauri/Cargo.toml` | `version = "0.10.0"` |
+| `src-tauri/tauri.conf.json` | `version: "0.10.0"` |
+| `src/settings.ts` | 关于卡片显示 v0.10.0 |

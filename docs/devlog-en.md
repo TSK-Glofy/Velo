@@ -609,3 +609,124 @@ The project is small (7 page files) with ~100 translation entries. A simple `Rec
 | `src-tauri/Cargo.toml` | `version = "0.9.0"` |
 | `src-tauri/tauri.conf.json` | `version: "0.9.0"` |
 | `src/settings.ts` | About card displays v0.9.0 |
+
+---
+
+# v0.10.0 — Background Task System + Task List Window
+
+## Goal
+
+Replace the blocking "click → wait for FFmpeg → done" flow with "submit a task → return instantly → watch progress in a separate window → recover after a crash." Wire Trim/Merge/Frames onto a shared task substrate and pick up multi-concurrency, retry, cancel, and live preview in one pass.
+
+## Architecture
+
+Four new Rust modules form the task subsystem:
+
+```
+task_types.rs  ── shared types (TaskRequest/Summary/Detail/Metrics/Event)
+jobs.rs        ── JSONL event log + in-memory registry + scheduler + Tauri commands
+ffmpeg.rs      ── adds build_task_command + run_ffmpeg_task alongside the old commands
+preview.rs     ── single-flight guarded preview frame extraction
+```
+
+Frontend gains `taskApi.ts` / `taskFormat.ts` / `taskList.ts`, plus a secondary window routed by `?window=task-list`.
+
+## Key Design Decisions
+
+### 1. JSONL event log + replay on startup
+
+Task state is not stored as a snapshot — every event is appended as one JSON line to `<install>/jobs/jobs.jsonl`. On startup the file is replayed to rebuild memory; tasks still flagged `Running` are reclassified as `Interrupted` (since the process must have died). Append-only writes need no locks and partial lines never corrupt the file. Zero external DB.
+
+### 2. Registry + scheduler + native threads
+
+`TaskRegistry` is an `Arc<Mutex<...>>` holding `tasks` / `queue` / `running` / `max_concurrent_jobs` (clamped 1–4). Scheduler logic is deliberately tiny: pop up to N startable ids, spawn `std::thread::spawn` per task, recurse to schedule the next batch when one finishes. No tokio runtime — FFmpeg is blocking IO + process wait, native threads are the cleanest fit.
+
+### 3. Layered FFmpeg command construction
+
+The legacy `trim_video` / `merge_videos` / `extract_frames` Tauri commands stay intact. New code goes through:
+
+```
+build_*_command  →  BuiltFfmpegTask { args, total_us, primary_input, output, ... }
+build_task_command(ffmpeg_path, &TaskRequest)
+run_ffmpeg_task(app, registry, task_id)
+```
+
+Splitting argument-building from process-running keeps the former pure and unit-testable. The same shape applies to `ProgressParser`, which parses ffmpeg `-progress` stdout into `TaskMetrics`.
+
+### 4. Live preview with a single-flight guard
+
+Each progress emission triggers a background `ffmpeg -ss <out_time> -i <input> -vf scale=320:-1 -frames:v 1 preview.jpg`. `PreviewState` keeps an `Arc<Mutex<HashSet<task_id>>>` — if the previous extraction is still running for that task, the new request is dropped. Prevents CPU storms when ten concurrent progress events would otherwise spawn ten ffmpeg processes.
+
+### 5. Secondary window, not a modal
+
+The task list is a separate Tauri webview window (built via `WebviewWindowBuilder` with `?window=task-list`). Main window keeps submitting tasks; closing/restarting the app loses no state — the JSONL rebuilds everything.
+
+### 6. Two retry policies
+
+On Retry, if the output file exists, ask: Yes → `useOriginal` (overwrite), No → `useNumberedFallback` (auto-generate `old_file(2).mp4`). Retry **reuses the same task_id** so the UI card selection stays put.
+
+### 7. Crash recovery prompt
+
+On main window startup, `list_interrupted_tasks` → if non-empty, ask the user, then `retry_interrupted_tasks` re-queues them all with the original output path and opens the task list window.
+
+## File Map
+
+### Rust
+
+| File | Responsibility |
+|------|----------------|
+| `task_types.rs` | Enums + structs shared across modules |
+| `jobs.rs` | JSONL append/replay, TaskRegistry, scheduler, 8 Tauri commands |
+| `preview.rs` | Preview args builder + single-flight guard |
+| `ffmpeg.rs` | `build_task_command` family + `run_ffmpeg_task` + `ProgressParser` |
+
+### Frontend
+
+| File | Responsibility |
+|------|----------------|
+| `taskApi.ts` | TS wrappers for task Tauri commands |
+| `taskFormat.ts` | Pure formatting helpers (dates, status classes) |
+| `taskList.ts` | Task list window renderer; subscribes to task-* events |
+| `main.ts` | Routes `?window=task-list`; shows recovery dialog on startup |
+| `home.ts` / `merge.ts` / `frames.ts` | Submit tasks instead of invoking ffmpeg directly |
+
+### Tests
+
+| File | What it covers |
+|------|----------------|
+| `cargo test` | jobs replay / scheduler / retry / numbered output / interrupted summaries — 31 tests |
+| `tests/task-format.test.mjs` | Frontend formatter unit tests |
+| `tests/task-list-render.test.mjs` | Asserts required CSS class names |
+| `tests/source-pages-task-api.test.mjs` | Asserts source pages submit via createTask |
+
+## Data Layout
+
+```
+<install root>/
+├─ config/
+│   ├─ config.json
+│   └─ install.json
+├─ jobs/
+│   ├─ jobs.jsonl
+│   └─ logs/<task_id>.log
+├─ preview/<task_id>.jpg
+└─ pic/background/...
+```
+
+Everything lives inside the install directory — portable-friendly.
+
+## Known Leftovers
+
+- Legacy `trim_video` / `merge_videos` / `extract_frames` commands are retained but unused by the frontend; can be removed next version
+- Old `ffmpeg-status` / `ffmpeg-progress` event names are still emitted by the legacy path but no longer listened to
+- `cancel_task` currently only sets a flag — the runner does not yet poll it and kill the child FFmpeg process; cancellation is best-effort until the next round
+- Installer locale seeding (Task 12 in the plan) not yet wired
+
+## Version Number Update
+
+| File | Field |
+|------|-------|
+| `package.json` | `version: "0.10.0"` |
+| `src-tauri/Cargo.toml` | `version = "0.10.0"` |
+| `src-tauri/tauri.conf.json` | `version: "0.10.0"` |
+| `src/settings.ts` | About card displays v0.10.0 |
