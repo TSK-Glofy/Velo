@@ -320,8 +320,7 @@ export async function renderHome(container: HTMLElement) {
         rotation: rotation.value || null,
       });
       await openTaskListWindow(summary.id);
-      status.textContent = t("tasks.created");
-      status.className = "text-sm mt-2 text-success";
+      status.textContent = "";
     } catch (e) {
       const message = isConfigAccessError(e)
         ? `${configErrorMessage(e)} ${errorDetail(e)}`

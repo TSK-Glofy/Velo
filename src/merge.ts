@@ -181,8 +181,7 @@ export function renderMerge(container: HTMLElement) {
         output: outputPath.value,
       });
       await openTaskListWindow(summary.id);
-      status.textContent = t("tasks.created");
-      status.className = "text-sm mt-2 text-success";
+      status.textContent = "";
     } catch (e) {
       status.textContent = `${t("merge.failed")}${e}`;
       status.className = "text-sm mt-2 text-error";

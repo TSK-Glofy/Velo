@@ -157,8 +157,7 @@ export function renderFrames(container: HTMLElement) {
         format,
       });
       await openTaskListWindow(summary.id);
-      status.textContent = t("tasks.created");
-      status.className = "text-sm mt-2 text-success";
+      status.textContent = "";
     } catch (e) {
       status.textContent = `${t("frames.failed")}${e}`;
       status.className = "text-sm mt-2 text-error";
