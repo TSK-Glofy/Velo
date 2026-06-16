@@ -54,7 +54,8 @@ export function cancelTask(taskId: string): Promise<boolean> {
 }
 
 export function openTaskListWindow(): Promise<void> {
-  return invoke<void>("open_task_list_window");
+  window.dispatchEvent(new CustomEvent("velo:open-tasks"));
+  return Promise.resolve();
 }
 
 export function listInterruptedTasks(): Promise<TaskSummary[]> {

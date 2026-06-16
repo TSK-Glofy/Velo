@@ -80,9 +80,11 @@ body {
 .task-list-shell {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-  height: 100vh;
+  height: calc(100vh - 48px);
+  border-radius: 10px;
   background: #101014;
   color: #f4f4f5;
+  overflow: hidden;
 }
 
 .task-list-sidebar {

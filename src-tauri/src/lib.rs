@@ -50,7 +50,6 @@ pub fn run() {
             jobs::list_interrupted_tasks,
             jobs::retry_interrupted_tasks,
             jobs::cancel_task,
-            jobs::open_task_list_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

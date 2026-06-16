@@ -12,7 +12,6 @@ import { renderSetup } from "./setup";
 import { renderTaskList } from "./taskList";
 import {
   listInterruptedTasks,
-  openTaskListWindow,
   retryInterruptedTasks,
   type TaskSummary,
 } from "./taskApi";
@@ -118,7 +117,7 @@ async function navigate(page: string, content: HTMLElement) {
   const container = getPageContainer(page, content);
   container.style.display = "block";
 
-  // Settings page re-renders every time (needs latest config)
+  // Settings + Tasks re-render every time (need latest state)
   if (page === "settings") {
     try {
       await renderSettings(container);
@@ -128,6 +127,14 @@ async function navigate(page: string, content: HTMLElement) {
       } else {
         renderFatalError(container, error);
       }
+    }
+    return;
+  }
+  if (page === "tasks") {
+    try {
+      await renderTaskList(container);
+    } catch (error) {
+      renderFatalError(container, error);
     }
     return;
   }
@@ -155,10 +162,7 @@ async function navigate(page: string, content: HTMLElement) {
   }
 }
 
-const params = new URLSearchParams(window.location.search);
-const isTaskListWindow = params.get("window") === "task-list";
-
-async function promptRecoveryIfNeeded() {
+async function promptRecoveryIfNeeded(navigateToTasks: () => void) {
   try {
     const interrupted: TaskSummary[] = await listInterruptedTasks();
     if (interrupted.length === 0) return;
@@ -168,7 +172,7 @@ async function promptRecoveryIfNeeded() {
     });
     if (retry) {
       await retryInterruptedTasks();
-      await openTaskListWindow();
+      navigateToTasks();
     }
   } catch {
     // Silent: recovery is best-effort.
@@ -178,22 +182,6 @@ async function promptRecoveryIfNeeded() {
 window.addEventListener("DOMContentLoaded", async () => {
   const sidebar = document.querySelector("#sidebar") as HTMLElement;
   const content = document.querySelector("#content") as HTMLElement;
-
-  if (isTaskListWindow) {
-    sidebar.style.display = "none";
-    try {
-      const savedLang = await configInvoke<string>("get_language");
-      setLang(savedLang as Lang);
-      await renderTaskList(content);
-    } catch (error) {
-      if (isConfigAccessError(error)) {
-        renderConfigError(content, error);
-      } else {
-        renderFatalError(content, error);
-      }
-    }
-    return;
-  }
 
   try {
     // Load saved language before rendering any UI
@@ -221,7 +209,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     } else {
       renderSidebar(sidebar, (page) => navigate(page, content));
       await navigate("trim", content);
-      void promptRecoveryIfNeeded();
+      const goToTasks = () => {
+        const btn = sidebar.querySelector<HTMLButtonElement>(
+          `.sidebar-btn[data-page="tasks"]`,
+        );
+        btn?.click();
+      };
+      window.addEventListener("velo:open-tasks", goToTasks);
+      void promptRecoveryIfNeeded(goToTasks);
     }
   } catch (error) {
     sidebar.style.display = "none";
