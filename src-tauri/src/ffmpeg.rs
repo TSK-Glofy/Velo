@@ -10,7 +10,9 @@ use tauri::{AppHandle, Emitter};
 
 use crate::config;
 use crate::jobs::{self, SharedTaskRegistry};
+use crate::preview;
 use crate::task_types::{TaskEvent, TaskMetrics, TaskRequest, TaskState};
+use tauri::Manager;
 
 /// 执行视频截取，实时将 ffmpeg 输出通过事件推送给前端
 #[tauri::command]
@@ -823,6 +825,9 @@ pub fn run_ffmpeg_task(
     let registry_for_stdout = registry.clone();
     let task_id_for_stdout = task_id.clone();
     let parser_for_stdout = parser.clone();
+    let preview_state = app.state::<preview::PreviewState>().inner().clone();
+    let preview_input = built.primary_input.clone();
+    let ffmpeg_for_preview = ffmpeg_path.clone();
     let stdout_thread = std::thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines().flatten() {
@@ -852,6 +857,18 @@ pub fn run_ffmpeg_task(
                         d.summary.metrics = metrics.clone();
                         let _ = app_for_stdout.emit("task-progress", &d.summary);
                     }
+                }
+                if let (Some(input), Some(out_time)) =
+                    (preview_input.as_ref(), metrics.out_time.as_ref())
+                {
+                    preview::request_preview(
+                        app_for_stdout.clone(),
+                        preview_state.clone(),
+                        ffmpeg_for_preview.clone(),
+                        task_id_for_stdout.clone(),
+                        input.clone(),
+                        out_time.clone(),
+                    );
                 }
             }
         }

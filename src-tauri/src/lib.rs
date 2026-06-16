@@ -3,6 +3,7 @@ mod config;
 mod ffmpeg;
 mod jobs;
 mod paths;
+mod preview;
 mod task_types;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -17,6 +18,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(shared_registry)
+        .manage(preview::PreviewState::default())
         // 注册所有命令，前端通过 invoke("命令名") 调用
         .invoke_handler(tauri::generate_handler![
             config::get_ffmpeg_path,
