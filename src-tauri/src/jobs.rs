@@ -242,6 +242,10 @@ impl TaskRegistry {
         self.tasks.get(task_id)
     }
 
+    pub fn task_mut(&mut self, task_id: &str) -> Option<&mut TaskDetail> {
+        self.tasks.get_mut(task_id)
+    }
+
     pub fn list_summaries(&self) -> Vec<TaskSummary> {
         let mut summaries: Vec<TaskSummary> = self
             .tasks
@@ -486,15 +490,43 @@ pub fn next_available_output_path(path: PathBuf) -> Result<PathBuf, String> {
     Err("Unable to find an available output filename".to_string())
 }
 
+pub fn schedule_ready_tasks(app: tauri::AppHandle, registry: SharedTaskRegistry) {
+    let task_ids = {
+        let mut locked = match registry.lock() {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+        locked.pop_startable_task_ids()
+    };
+
+    for task_id in task_ids {
+        let app_clone = app.clone();
+        let registry_clone = registry.clone();
+        std::thread::spawn(move || {
+            let _ = crate::ffmpeg::run_ffmpeg_task(
+                app_clone.clone(),
+                registry_clone.clone(),
+                task_id,
+            );
+            schedule_ready_tasks(app_clone, registry_clone);
+        });
+    }
+}
+
 #[tauri::command]
 pub fn create_task(
+    app: tauri::AppHandle,
     state: tauri::State<SharedTaskRegistry>,
     request: TaskRequest,
 ) -> Result<TaskSummary, String> {
-    let mut registry = state
-        .lock()
-        .map_err(|_| "Task registry lock failed".to_string())?;
-    registry.create_task(request)
+    let summary = {
+        let mut registry = state
+            .lock()
+            .map_err(|_| "Task registry lock failed".to_string())?;
+        registry.create_task(request)?
+    };
+    schedule_ready_tasks(app, state.inner().clone());
+    Ok(summary)
 }
 
 #[tauri::command]
@@ -526,14 +558,19 @@ pub fn get_task_log_tail(task_id: String, lines: usize) -> Result<Vec<String>, S
 
 #[tauri::command]
 pub fn retry_task(
+    app: tauri::AppHandle,
     state: tauri::State<SharedTaskRegistry>,
     task_id: String,
     output_policy: RetryOutputPolicy,
 ) -> Result<TaskSummary, String> {
-    let mut registry = state
-        .lock()
-        .map_err(|_| "Task registry lock failed".to_string())?;
-    registry.retry(&task_id, output_policy)
+    let summary = {
+        let mut registry = state
+            .lock()
+            .map_err(|_| "Task registry lock failed".to_string())?;
+        registry.retry(&task_id, output_policy)?
+    };
+    schedule_ready_tasks(app, state.inner().clone());
+    Ok(summary)
 }
 
 #[tauri::command]
