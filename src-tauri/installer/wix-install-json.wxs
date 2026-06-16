@@ -4,7 +4,7 @@
     <DirectoryRef Id="INSTALLDIR">
       <Directory Id="VeloConfigDir" Name="config">
         <Component Id="VeloInstallDefaults" Guid="*">
-          <File Id="VeloInstallDefaultsFile" Source="installer\install.json" KeyPath="yes" Name="install.json" />
+          <File Id="VeloInstallDefaultsFile" Source="$(sys.SOURCEFILEDIR)install.json" KeyPath="yes" Name="install.json" />
         </Component>
       </Directory>
     </DirectoryRef>

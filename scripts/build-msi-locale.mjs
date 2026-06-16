@@ -9,8 +9,10 @@ if (!["en_US", "zh_CN"].includes(locale)) {
 }
 
 const root = process.cwd();
-const source = path.join(root, "src-tauri", "installer", `install.${locale}.json`);
-const dest = path.join(root, "src-tauri", "installer", "install.json");
+const installerDir = path.join(root, "src-tauri", "installer");
+const source = path.join(installerDir, `install.${locale}.json`);
+const dest = path.join(installerDir, "install.json");
+const defaultSource = path.join(installerDir, "install.en_US.json");
 fs.copyFileSync(source, dest);
 
 const wixLanguage = locale === "zh_CN" ? "zh-CN" : "en-US";
@@ -30,5 +32,6 @@ const result = spawnSync(
   { stdio: "inherit", shell: true },
 );
 
-fs.rmSync(dest, { force: true });
+// Restore default content (en_US) so the tracked file stays clean.
+fs.copyFileSync(defaultSource, dest);
 process.exit(result.status ?? 1);
