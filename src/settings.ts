@@ -204,7 +204,7 @@ export async function renderSettings(container: HTMLElement) {
               <img src="/icon.png" alt="Velo" class="w-16 h-16 rounded-xl shrink-0" />
               <div>
                 <h3 class="text-lg font-bold">Velo</h3>
-                <p class="text-sm opacity-70">v0.10.2</p>
+                <p class="text-sm opacity-70">v0.11.0</p>
                 <p class="text-sm opacity-70">TSK-Glofy</p>
               </div>
             </div>

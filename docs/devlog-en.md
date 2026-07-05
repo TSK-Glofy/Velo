@@ -769,3 +769,98 @@ Six `<p class="text-sm opacity-70 mb-2">${t("settings.xxxHint")}</p>` blocks (la
 | `src-tauri/Cargo.toml` | `version = "0.10.1"` |
 | `src-tauri/tauri.conf.json` | `version: "0.10.1"` |
 | `src/settings.ts` | About card displays v0.10.1 |
+
+---
+
+# v0.11.0 — Drag-to-select trim range + Video to GIF + preview offset fix
+
+## Goal
+
+Replace "type -ss/-t by hand" with "drag a timeline and watch the frame", add a video-to-GIF converter, and fix the long-standing bug where task previews showed the wrong frame whenever the start time was non-zero. Time inputs are also normalized to HH:MM:SS across the app.
+
+## New Features
+
+### 1. Time input normalization (timeFormat.ts)
+
+New `src/timeFormat.ts` with four helpers:
+
+- `hmsToSeconds(str)`: parses `SS` / `MM:SS` / `HH:MM:SS` (fractions allowed), returns null on invalid input; mirrors the Rust-side `parse_duration_us`
+- `secondsToHms(sec)`: formats as `HH:MM:SS`, keeping sub-second precision (rounded to ms to avoid float tails)
+- `attachTimeNormalizer(el, cache)`: validates + reformats on blur, writes back to the page input cache, flags invalid values with `input-error`
+- `isInvalidTimeInput(el)`: submit-time guard (only blocks non-empty unparseable values)
+
+Shared by the Trim, Frames, and GIF pages; invalid input blocks task creation with a hint.
+
+### 2. Range selector component (rangeSelector.ts)
+
+Reusable `createRangeSelector({host, inputPath, onRangeChange})` used by all three pages:
+
+- **Dual-handle timeline**: hand-drawn rail + two handles (pointer events + setPointerCapture); clicking the bare rail grabs the nearest handle; `onRangeChange(start, end)` fires live while dragging
+- **Two-way sync**: dragging fills the start/duration inputs as `HH:MM:SS`; editing the inputs calls `setRange()` back into the slider. An empty duration means "to the end" (`setRange` gets Infinity and clamps to the video length)
+- **Two preview modes**:
+  - `video`: `<video muted preload="metadata">` + `convertFileSrc`; dragging sets `currentTime` for instant seeking. This is WebView2's (Edge engine) built-in decoder — mp4/webm/mkv play natively, **no bundled player, zero installer size impact**
+  - `frame`: when the video element fires `error` (AVI/FLV/WMV etc.), the component falls back automatically — video hidden, `<img>` shown, duration via the new `get_video_duration` command, and dragging debounced 200ms into `generate_scrub_frame` single-frame extraction, with an "FFmpeg frame preview" badge
+- **Preview size presets**: 25%/50%/75%/100% buttons below the track scale the media by width; the choice is stored in localStorage (`velo-preview-size`), shared across pages and restarts
+- **Lifecycle**: `destroy()` clears the video src and calls `load()` to release the decoder; the component is rebuilt on file change
+
+### 3. Video to GIF (full stack)
+
+- `task_types.rs`: `TaskKind::Gif` + `TaskRequest::Gif { input, output, start, duration, fps, width }`
+- `ffmpeg.rs`: `build_gif_command` with the filter chain
+
+  ```
+  fps={fps|10},scale={width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse
+  ```
+
+  Two-stage palette encoding (palettegen builds a 256-color palette from the whole clip, paletteuse maps to it) beats GIF's default dithering by a wide margin; an empty width skips the scale stage. Start/duration resolution is shared with trim via the newly extracted `resolve_start_duration` (empty start → 0, empty duration → probed length minus start)
+- `jobs.rs`: Gif arms added to `kind_for_request` / `title_for_request` / `output_for_request` / retry-rename
+- Frontend `gif.ts` mirrors home.ts: fps select (5–25, default 10), width select (original/320/480/640/800, default 480), output name auto-suffixed `.gif`; registered in sidebar/main.ts/taskApi/i18n
+- Progress, previews, cancel, and retry all ride the existing task pipeline for free
+
+### 4. Scrub helper commands (preview.rs + paths.rs)
+
+- `get_video_duration(input) -> f64`: wraps `probe_video_duration` (ffprobe first, ffmpeg stderr fallback), returns seconds
+- `generate_scrub_frame(input, seconds) -> String`: reuses `build_preview_args` to extract one frame into the preview dir as `scrub_{input-path-hash}.jpg` (DefaultHasher) — living in the preview dir means the Settings "clear previews" cleanup already covers it
+
+## Key Fixes
+
+### Task preview ignored the -ss offset
+
+**Root cause**: ffmpeg's `-progress` `out_time` is relative to the **output** stream (starts at 0), but the preview extraction applied it as `-ss` against the **source**. With a 3-minute start, 10 seconds into the job the preview showed second 10 of the source file.
+
+**Fix**: `BuiltFfmpegTask` gains `preview_offset_us` (µs of start for trim/frames/gif, 0 for merge); `run_ffmpeg_task` computes `offset + parse_duration_us(out_time)` and passes the absolute seconds to the preview. Verified against a testsrc2 clip: requesting 5.5s extracts a frame whose burned-in timecode reads exactly `00:00:05.500`.
+
+### CSS cascade layers gotcha: unlayered styles beat Tailwind utilities
+
+The "Loading video..." overlay refused to hide once the preview was ready. Tailwind v4 puts `.hidden` inside `@layer utilities`, while the custom `.rs-status { display: flex }` rule in styles.css is **unlayered** — and per the Cascade Layers spec, unlayered styles always win over layered ones, regardless of specificity or order. Fixed by setting `style.display = "none"` inline from JS.
+
+**Lesson**: when custom CSS and a Tailwind utility fight over the same property, either put the custom rule into a `@layer` too, or don't rely on the utility class to override it.
+
+## File Inventory
+
+| File | Change |
+|------|--------|
+| `src/timeFormat.ts` | New: time parsing/formatting/input normalization |
+| `src/rangeSelector.ts` | New: dual-handle slider + video/frame dual-mode preview |
+| `src/gif.ts` | New: GIF page |
+| `src/home.ts` / `frames.ts` | Range selector integration + time normalization |
+| `src/sidebar.ts` / `main.ts` / `taskApi.ts` / `i18n.ts` | GIF page registration + range/gif strings |
+| `src/styles.css` | rs-* component styles |
+| `src-tauri/src/ffmpeg.rs` | preview_offset_us + resolve_start_duration + build_gif_command + tests |
+| `src-tauri/src/preview.rs` | get_video_duration / generate_scrub_frame commands |
+| `src-tauri/src/task_types.rs` / `jobs.rs` | Gif task kind and branches |
+| `src-tauri/src/paths.rs` | scrub_file path helper |
+| `src-tauri/src/lib.rs` | Register the 2 new commands |
+
+## Measured size impact
+
+Release velo.exe: 10.60 MB → 10.48 MB (no new dependencies; `<video>` is a WebView2 system capability). Frontend bundle JS +13 KB.
+
+## Version Number Update
+
+| File | Field |
+|------|------|
+| `package.json` | `version: "0.11.0"` |
+| `src-tauri/Cargo.toml` | `version = "0.11.0"` |
+| `src-tauri/tauri.conf.json` | `version: "0.11.0"` |
+| `src/settings.ts` | About card displays v0.11.0 |

@@ -852,3 +852,98 @@ home.ts / merge.ts / frames.ts 拿 `createTask` 返回的 `summary.id` 传给 `o
 | `src-tauri/Cargo.toml` | `version = "0.10.1"` |
 | `src-tauri/tauri.conf.json` | `version: "0.10.1"` |
 | `src/settings.ts` | 关于卡片显示 v0.10.1 |
+
+---
+
+# v0.11.0 — 拖拽剪辑范围 + 视频转 GIF + 预览偏移修复
+
+## 目标
+
+把"手填 -ss/-t"升级为"拖时间轴、看画面选范围"，新增视频转 GIF 功能，并修掉任务预览图在起始时间非 0 时错位的老 bug。时间输入同时统一为 HH:MM:SS 格式。
+
+## 新增功能
+
+### 1. 时间输入规范化（timeFormat.ts）
+
+新增 `src/timeFormat.ts`，提供四个函数：
+
+- `hmsToSeconds(str)`：解析 `SS` / `MM:SS` / `HH:MM:SS`（可带小数），非法返回 null，逻辑与 Rust 端 `parse_duration_us` 对齐
+- `secondsToHms(sec)`：格式化为 `HH:MM:SS`，有小数秒时保留（毫秒级取整避免浮点尾巴）
+- `attachTimeNormalizer(el, cache)`：失焦时校验 + 规范化 + 写回页面输入缓存，非法加 `input-error` 样式
+- `isInvalidTimeInput(el)`：提交前校验（非空但解析失败才拦截）
+
+截取、逐帧提取、GIF 三个页面共用，提交任务时非法输入会标红并提示。
+
+### 2. 剪辑范围选择器（rangeSelector.ts）
+
+新增可复用组件 `createRangeSelector({host, inputPath, onRangeChange})`，三个页面共用：
+
+- **双滑块时间轴**：自绘轨道 + 两个手柄（pointer 事件 + setPointerCapture），点轨道空白处自动抓最近的手柄；拖动时实时回调 `onRangeChange(start, end)`
+- **双向同步**：拖手柄 → 起始/持续时间输入框自动填 `HH:MM:SS`；手动改输入框失焦 → `setRange()` 反向更新滑块和画面。持续时间留空表示"到结尾"（`setRange` 用 Infinity，内部 clamp 到视频总长）
+- **画面预览两种模式**：
+  - `video` 模式：`<video muted preload="metadata">` + `convertFileSrc`，拖动时设 `currentTime` 画面即时跟随。用的是 WebView2（Edge 内核）自带解码器，mp4/webm/mkv 都能播，**不打包任何播放器、安装包体积零增加**
+  - `frame` 模式：video 元素触发 `error`（AVI/FLV/WMV 等不支持的封装/编码）时自动降级——隐藏 video 显示 `<img>`，时长走新命令 `get_video_duration`，拖动经 200ms 防抖调 `generate_scrub_frame` 抽单帧显示，右上角挂"FFmpeg 抽帧预览"角标
+- **预览大小档位**：时间轴下方 25%/50%/75%/100% 四个按钮，按宽度百分比缩放画面，选择存 localStorage（`velo-preview-size`），三页共享、重启保留
+- **生命周期**：`destroy()` 清空 video src 并 `load()` 释放解码器；换文件时整个重建
+
+### 3. 视频转 GIF（全链路）
+
+- `task_types.rs`：`TaskKind::Gif` + `TaskRequest::Gif { input, output, start, duration, fps, width }`
+- `ffmpeg.rs`：`build_gif_command`，滤镜链为
+
+  ```
+  fps={fps|10},scale={width}:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse
+  ```
+
+  两阶段调色板（palettegen 先统计全片颜色生成 256 色板，paletteuse 再映射）比 GIF 默认抖动质量高得多；宽度留空则跳过 scale。start/duration 的解析与 trim 共用新抽出的 `resolve_start_duration`（start 空默认 0，duration 空 probe 总长减 start）
+- `jobs.rs`：`kind_for_request` / `title_for_request` / `output_for_request` / 重试改名逻辑各加 Gif 分支
+- 前端 `gif.ts` 仿 home.ts：帧率下拉（5-25，默认 10）、宽度下拉（原始/320/480/640/800，默认 480）、输出名自动补 `.gif`；sidebar/main.ts/taskApi/i18n 同步注册
+- 任务进度、预览图、取消、重试全部复用现有任务管线，零额外代码
+
+### 4. 抽帧辅助命令（preview.rs + paths.rs）
+
+- `get_video_duration(input) -> f64`：包装 `probe_video_duration`（ffprobe 优先，ffmpeg stderr 兜底），返回秒
+- `generate_scrub_frame(input, seconds) -> String`：复用 `build_preview_args` 抽一帧到 preview 目录，文件名 `scrub_{输入路径hash}.jpg`（DefaultHasher）——放 preview 目录意味着设置页"清理缓存 → Preview 截图"顺带就能清掉
+
+## 关键修复
+
+### 任务预览图忽略 -ss 偏移
+
+**根因**：ffmpeg `-progress` 输出的 `out_time` 是相对**输出流**的时间（从 0 开始），而预览抽帧直接拿它对**原始输入**做 `-ss`。起始时间设为 3 分钟时，剪到第 10 秒，预览显示的却是原片第 10 秒的画面。
+
+**修复**：`BuiltFfmpegTask` 新增 `preview_offset_us` 字段（trim/frames/gif 取 start 的微秒值，merge 为 0），`run_ffmpeg_task` 请求预览时计算 `offset + parse_duration_us(out_time)` 再格式化为秒字符串传入。用 testsrc2 测试视频验证：请求 5.5 秒，抽出帧的烧录时间码正好 `00:00:05.500`。
+
+### CSS 层叠层的坑：无层级样式压过 Tailwind 工具类
+
+"正在读取视频..."加载提示在预览就绪后隐藏不掉。原因：Tailwind v4 的 `.hidden` 在 `@layer utilities` 里，而 styles.css 里自定义的 `.rs-status { display: flex }` 是**无层级**样式——按 CSS Cascade Layers 规则，无层级永远赢过有层级，与选择器优先级、书写顺序都无关。改为 JS 直接设 `style.display = "none"`。
+
+**教训**：自定义 CSS 与 Tailwind 工具类同时控制一个属性时，要么自定义规则也放进 `@layer`，要么别指望用工具类去覆盖。
+
+## 文件清单
+
+| 文件 | 动作 |
+|------|------|
+| `src/timeFormat.ts` | 新增：时间解析/格式化/输入规范化 |
+| `src/rangeSelector.ts` | 新增：双滑块 + video/抽帧双模式预览组件 |
+| `src/gif.ts` | 新增：GIF 页面 |
+| `src/home.ts` / `frames.ts` | 集成范围选择器 + 时间规范化 |
+| `src/sidebar.ts` / `main.ts` / `taskApi.ts` / `i18n.ts` | GIF 页注册 + range/gif 文案 |
+| `src/styles.css` | rs-* 组件样式 |
+| `src-tauri/src/ffmpeg.rs` | preview_offset_us + resolve_start_duration + build_gif_command + 测试 |
+| `src-tauri/src/preview.rs` | get_video_duration / generate_scrub_frame 命令 |
+| `src-tauri/src/task_types.rs` / `jobs.rs` | Gif 任务类型及分支 |
+| `src-tauri/src/paths.rs` | scrub_file 路径辅助 |
+| `src-tauri/src/lib.rs` | 注册 2 个新命令 |
+
+## 体积实测
+
+release 版 velo.exe：10.60 MB → 10.48 MB（无新增依赖；`<video>` 是 WebView2 系统能力）。前端 bundle JS +13 KB。
+
+## 版本号统一更新
+
+| 文件 | 字段 |
+|------|------|
+| `package.json` | `version: "0.11.0"` |
+| `src-tauri/Cargo.toml` | `version = "0.11.0"` |
+| `src-tauri/tauri.conf.json` | `version: "0.11.0"` |
+| `src/settings.ts` | 关于卡片显示 v0.11.0 |
