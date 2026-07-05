@@ -11,10 +11,11 @@ pub struct PreviewState {
     running: Arc<Mutex<HashSet<String>>>,
 }
 
-pub fn build_preview_args(out_time: &str, input: &str, output: &str) -> Vec<String> {
+/// `timestamp` is an absolute position in the source video (seconds or HH:MM:SS).
+pub fn build_preview_args(timestamp: &str, input: &str, output: &str) -> Vec<String> {
     vec![
         "-ss".into(),
-        out_time.into(),
+        timestamp.into(),
         "-i".into(),
         input.into(),
         "-frames:v".into(),
@@ -32,7 +33,7 @@ pub fn request_preview(
     ffmpeg_path: String,
     task_id: String,
     input: String,
-    out_time: String,
+    timestamp: String,
 ) {
     {
         let mut running = match preview_state.running.lock() {
@@ -59,7 +60,7 @@ pub fn request_preview(
             let _ = std::fs::create_dir_all(parent);
         }
         let output = preview_path.to_string_lossy().to_string();
-        let args = build_preview_args(&out_time, &input, &output);
+        let args = build_preview_args(&timestamp, &input, &output);
 
         let mut cmd = Command::new(&ffmpeg_path);
         cmd.args(&args).stdout(Stdio::null()).stderr(Stdio::null());

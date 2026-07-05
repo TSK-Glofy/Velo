@@ -137,6 +137,9 @@ pub struct BuiltFfmpegTask {
     pub args: Vec<String>,
     pub total_us: i64,
     pub primary_input: Option<String>,
+    /// -ss offset of the primary input (µs); progress out_time is relative
+    /// to the output, so previews must add this back to seek the source.
+    pub preview_offset_us: i64,
 }
 
 fn format_output_size(bytes: u64) -> String {
@@ -284,6 +287,7 @@ pub fn build_trim_command(
         duration.trim().to_string()
     };
     let total_us = parse_duration_us(&effective_duration).unwrap_or(0);
+    let preview_offset_us = parse_duration_us(&effective_start).unwrap_or(0);
     let is_copy = codec_mode.as_deref() == Some("copy");
 
     let mut args: Vec<String> = Vec::new();
@@ -328,6 +332,7 @@ pub fn build_trim_command(
         args,
         total_us,
         primary_input: Some(input.to_string()),
+        preview_offset_us,
     })
 }
 
@@ -365,6 +370,7 @@ pub fn build_merge_command(inputs: &[String], output: &str) -> Result<BuiltFfmpe
         args,
         total_us: 0,
         primary_input: inputs.first().cloned(),
+        preview_offset_us: 0,
     })
 }
 
@@ -379,6 +385,10 @@ pub fn build_frames_command(
     let total_us = duration
         .as_ref()
         .and_then(|d| parse_duration_us(d))
+        .unwrap_or(0);
+    let preview_offset_us = start
+        .as_ref()
+        .and_then(|s| parse_duration_us(s))
         .unwrap_or(0);
 
     let mut args: Vec<String> = Vec::new();
@@ -413,6 +423,7 @@ pub fn build_frames_command(
         args,
         total_us,
         primary_input: Some(input.to_string()),
+        preview_offset_us,
     })
 }
 
@@ -517,6 +528,7 @@ pub fn run_ffmpeg_task(
     let parser_for_stdout = parser.clone();
     let preview_state = app.state::<preview::PreviewState>().inner().clone();
     let preview_input = built.primary_input.clone();
+    let preview_offset_us = built.preview_offset_us;
     let ffmpeg_for_preview = ffmpeg_path.clone();
     let stdout_thread = std::thread::spawn(move || {
         let reader = BufReader::new(stdout);
@@ -551,13 +563,19 @@ pub fn run_ffmpeg_task(
                 if let (Some(input), Some(out_time)) =
                     (preview_input.as_ref(), metrics.out_time.as_ref())
                 {
+                    // out_time is relative to the trimmed output; add the -ss
+                    // offset back so the preview frame comes from the right
+                    // spot in the source video.
+                    let absolute_us =
+                        preview_offset_us + parse_duration_us(out_time).unwrap_or(0);
+                    let timestamp = format!("{:.3}", absolute_us as f64 / 1_000_000.0);
                     preview::request_preview(
                         app_for_stdout.clone(),
                         preview_state.clone(),
                         ffmpeg_for_preview.clone(),
                         task_id_for_stdout.clone(),
                         input.clone(),
-                        out_time.clone(),
+                        timestamp,
                     );
                 }
             }
@@ -662,6 +680,25 @@ fn finish_task_failed(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trim_command_records_preview_offset() {
+        let built = build_trim_command(
+            "ffmpeg",
+            "in.mp4",
+            "out.mp4",
+            "00:01:00",
+            "10",
+            &None,
+            &None,
+            &None,
+            &None,
+        )
+        .unwrap();
+        assert_eq!(built.preview_offset_us, 60_000_000);
+        assert_eq!(built.total_us, 10_000_000);
+        assert_eq!(built.args[0..2], ["-ss".to_string(), "00:01:00".to_string()]);
+    }
 
     #[test]
     fn parses_progress_metrics_with_percent() {
