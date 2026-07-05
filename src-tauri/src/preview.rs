@@ -82,6 +82,51 @@ pub fn request_preview(
     });
 }
 
+fn ffmpeg_path_from_config() -> Result<String, String> {
+    crate::config::load_config()?
+        .ffmpeg_path
+        .ok_or_else(|| "FFmpeg path is not configured".to_string())
+}
+
+/// Probe the source length in seconds, for the scrub slider range.
+#[tauri::command]
+pub fn get_video_duration(input: String) -> Result<f64, String> {
+    let ffmpeg_path = ffmpeg_path_from_config()?;
+    let raw = crate::ffmpeg::probe_video_duration(&ffmpeg_path, &input)?;
+    if let Ok(secs) = raw.parse::<f64>() {
+        return Ok(secs);
+    }
+    crate::ffmpeg::parse_duration_us(&raw)
+        .map(|us| us as f64 / 1_000_000.0)
+        .ok_or_else(|| format!("Unable to parse duration: {raw}"))
+}
+
+/// Extract a single frame at `seconds` for scrub preview when the webview
+/// cannot decode the source itself. Blocking; the frontend debounces calls.
+#[tauri::command]
+pub fn generate_scrub_frame(input: String, seconds: f64) -> Result<String, String> {
+    let ffmpeg_path = ffmpeg_path_from_config()?;
+    let frame_path = crate::paths::scrub_file(&input)?;
+    if let Some(parent) = frame_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let output = frame_path.to_string_lossy().to_string();
+    let timestamp = format!("{:.3}", seconds.max(0.0));
+    let args = build_preview_args(&timestamp, &input, &output);
+
+    let mut cmd = Command::new(&ffmpeg_path);
+    cmd.args(&args).stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000);
+    let status = cmd
+        .status()
+        .map_err(|e| format!("Failed to start FFmpeg: {e}"))?;
+    if !status.success() {
+        return Err(format!("FFmpeg exited with code {}", status.code().unwrap_or(-1)));
+    }
+    Ok(output)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

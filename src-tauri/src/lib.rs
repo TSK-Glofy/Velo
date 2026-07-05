@@ -76,6 +76,8 @@ pub fn run() {
             jobs::cancel_task,
             jobs::delete_task,
             jobs::clear_task_history,
+            preview::get_video_duration,
+            preview::generate_scrub_frame,
             maintenance::get_storage_usage,
             maintenance::clear_task_logs,
             maintenance::clear_previews,

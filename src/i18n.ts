@@ -209,6 +209,12 @@ const translations: Record<Lang, Record<string, string>> = {
     "tasks.retryOverwriteTitle": "输出文件已存在",
     "tasks.retryOverwriteMessage": "重试将覆盖现有的输出文件。是否覆盖？选择「否」会生成带编号的新文件名。",
 
+    // Range selector
+    "range.loading": "正在读取视频...",
+    "range.hint": "拖动两侧手柄选择起始/结束位置",
+    "range.error": "无法读取视频时长: ",
+    "range.fallbackBadge": "FFmpeg 抽帧预览",
+
     // Common
     "common.videoFiles": "视频文件",
     "common.images": "图片",
@@ -418,6 +424,12 @@ const translations: Record<Lang, Record<string, string>> = {
     "tasks.recoveryMessage": "Some tasks did not finish last time. Retry them now?",
     "tasks.retryOverwriteTitle": "Output file exists",
     "tasks.retryOverwriteMessage": "Retrying will overwrite the existing output. Overwrite? Choosing No will create a numbered fallback name.",
+
+    // Range selector
+    "range.loading": "Loading video...",
+    "range.hint": "Drag the handles to pick start/end",
+    "range.error": "Unable to read video duration: ",
+    "range.fallbackBadge": "FFmpeg frame preview",
 
     // Common
     "common.videoFiles": "Video Files",

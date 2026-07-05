@@ -20,6 +20,19 @@ pub fn preview_file(task_id: &str) -> Result<PathBuf, String> {
     Ok(preview_file_from_root(&app_root()?, task_id))
 }
 
+/// Scrub frames live in the preview dir so cache cleanup removes them too.
+pub fn scrub_file(input: &str) -> Result<PathBuf, String> {
+    Ok(scrub_file_from_root(&app_root()?, input))
+}
+
+pub fn scrub_file_from_root(root: &Path, input: &str) -> PathBuf {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    input.hash(&mut hasher);
+    preview_dir_from_root(root).join(format!("scrub_{:016x}.jpg", hasher.finish()))
+}
+
 pub fn app_owned_path(relative: &str) -> Result<PathBuf, String> {
     app_owned_path_from_root(&app_root()?, relative)
 }

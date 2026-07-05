@@ -319,6 +319,75 @@ body {
   text-overflow: ellipsis;
 }
 
+/* 剪辑范围选择器（双滑块 + 画面预览） */
+.rs-media {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 8px;
+  overflow: hidden;
+  min-height: 120px;
+}
+
+.rs-media .rs-video,
+.rs-media .rs-img {
+  max-height: 260px;
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.rs-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 9999px;
+  color: white;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.rs-track {
+  position: relative;
+  height: 28px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.rs-rail {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 100%;
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(120, 120, 140, 0.35);
+}
+
+.rs-sel {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-primary, #6366f1);
+  opacity: 0.75;
+}
+
+.rs-handle {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: white;
+  border: 3px solid var(--color-primary, #6366f1);
+  transform: translate(-50%, -50%);
+  cursor: ew-resize;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
 /* ffmpeg 日志区域 */
 #ffmpeg-log {
   background: #1a1a2e;

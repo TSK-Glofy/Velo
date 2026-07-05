@@ -9,7 +9,8 @@ import {
 } from "./configAccess";
 import { t } from "./i18n";
 import { createTask, openTaskListWindow } from "./taskApi";
-import { attachTimeNormalizer, isInvalidTimeInput } from "./timeFormat";
+import { attachTimeNormalizer, hmsToSeconds, isInvalidTimeInput, secondsToHms } from "./timeFormat";
+import { createRangeSelector, type RangeSelector } from "./rangeSelector";
 
 // Module-level cache: preserves user input across page switches
 const cache: Record<string, string> = {};
@@ -42,6 +43,8 @@ export async function renderGif(container: HTMLElement) {
             <button id="gif-input-btn" class="btn join-item">${t("gif.browse")}</button>
           </div>
         </div>
+
+        <div id="gif-range"></div>
 
         <div class="grid grid-cols-4 gap-4">
           <div>
@@ -124,6 +127,45 @@ export async function renderGif(container: HTMLElement) {
   attachTimeNormalizer(startTime, cache);
   attachTimeNormalizer(duration, cache);
 
+  // --- drag-to-select range with live frame preview ---
+  const rangeHost = container.querySelector("#gif-range") as HTMLElement;
+  let rangeSelector: RangeSelector | null = null;
+
+  function syncInputsFromRange(startSec: number, endSec: number) {
+    startTime.value = secondsToHms(startSec);
+    duration.value = secondsToHms(endSec - startSec);
+    startTime.classList.remove("input-error");
+    duration.classList.remove("input-error");
+    cache[startTime.id] = startTime.value;
+    cache[duration.id] = duration.value;
+  }
+
+  function syncRangeFromInputs() {
+    if (!rangeSelector) return;
+    const startSec = startTime.value.trim() ? hmsToSeconds(startTime.value) : 0;
+    if (startSec === null) return;
+    const durSec = duration.value.trim() ? hmsToSeconds(duration.value) : null;
+    rangeSelector.setRange(startSec, durSec === null ? Number.POSITIVE_INFINITY : startSec + durSec);
+  }
+
+  function rebuildRangeSelector() {
+    rangeSelector?.destroy();
+    rangeSelector = null;
+    if (!inputPath.value) return;
+    rangeSelector = createRangeSelector({
+      host: rangeHost,
+      inputPath: inputPath.value,
+      onRangeChange: syncInputsFromRange,
+    });
+    syncRangeFromInputs();
+  }
+
+  startTime.addEventListener("blur", syncRangeFromInputs);
+  duration.addEventListener("blur", syncRangeFromInputs);
+  if (inputPath.value) {
+    rebuildRangeSelector();
+  }
+
   function updatePlaceholder() {
     if (inputPath.value) {
       const { name } = parsePath(inputPath.value);
@@ -194,6 +236,7 @@ export async function renderGif(container: HTMLElement) {
       inputPath.value = selected as string;
       cache[inputPath.id] = inputPath.value;
       updatePlaceholder();
+      rebuildRangeSelector();
     }
   });
 

@@ -15,7 +15,7 @@ use crate::task_types::{TaskEvent, TaskMetrics, TaskRequest, TaskState};
 use tauri::Manager;
 
 /// 将 "HH:MM:SS" 或 "SS" 格式的时间字符串转换为微秒
-fn parse_duration_us(s: &str) -> Option<i64> {
+pub(crate) fn parse_duration_us(s: &str) -> Option<i64> {
     let parts: Vec<&str> = s.split(':').collect();
     let seconds: f64 = match parts.len() {
         1 => parts[0].parse().ok()?,
@@ -35,7 +35,7 @@ fn parse_duration_us(s: &str) -> Option<i64> {
     Some((seconds * 1_000_000.0) as i64)
 }
 
-fn probe_video_duration(ffmpeg_path: &str, input: &str) -> Result<String, String> {
+pub(crate) fn probe_video_duration(ffmpeg_path: &str, input: &str) -> Result<String, String> {
     if let Ok(d) = probe_duration_with_ffprobe(ffmpeg_path, input) {
         return Ok(d);
     }
