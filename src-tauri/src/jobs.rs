@@ -184,6 +184,7 @@ pub fn title_for_request(request: &TaskRequest) -> String {
             }
         }
         TaskRequest::Frames { input, .. } => file_stem_or_name(input),
+        TaskRequest::Gif { input, .. } => file_stem_or_name(input),
     }
 }
 
@@ -192,6 +193,7 @@ pub fn output_for_request(request: &TaskRequest) -> Option<String> {
         TaskRequest::Trim { output, .. } => Some(output.clone()),
         TaskRequest::Merge { output, .. } => Some(output.clone()),
         TaskRequest::Frames { output_dir, .. } => Some(output_dir.clone()),
+        TaskRequest::Gif { output, .. } => Some(output.clone()),
     }
 }
 
@@ -400,7 +402,9 @@ impl TaskRegistry {
         let detail = self.tasks.get_mut(task_id).ok_or("Task not found")?;
         if policy == RetryOutputPolicy::UseNumberedFallback {
             match &mut detail.request {
-                TaskRequest::Trim { output, .. } | TaskRequest::Merge { output, .. } => {
+                TaskRequest::Trim { output, .. }
+                | TaskRequest::Merge { output, .. }
+                | TaskRequest::Gif { output, .. } => {
                     let next = next_available_output_path(PathBuf::from(&*output))?;
                     *output = next.to_string_lossy().to_string();
                     detail.summary.output = Some(output.clone());
@@ -516,7 +520,9 @@ impl TaskRegistry {
         let detail = self.tasks.get_mut(task_id).ok_or("Task not found")?;
         if policy == RetryOutputPolicy::UseNumberedFallback {
             match &mut detail.request {
-                TaskRequest::Trim { output, .. } | TaskRequest::Merge { output, .. } => {
+                TaskRequest::Trim { output, .. }
+                | TaskRequest::Merge { output, .. }
+                | TaskRequest::Gif { output, .. } => {
                     let next = next_available_output_path(PathBuf::from(&*output))?;
                     *output = next.to_string_lossy().to_string();
                     detail.summary.output = Some(output.clone());
@@ -539,6 +545,7 @@ fn kind_for_request(request: &TaskRequest) -> TaskKind {
         TaskRequest::Trim { .. } => TaskKind::Trim,
         TaskRequest::Merge { .. } => TaskKind::Merge,
         TaskRequest::Frames { .. } => TaskKind::Frames,
+        TaskRequest::Gif { .. } => TaskKind::Gif,
     }
 }
 

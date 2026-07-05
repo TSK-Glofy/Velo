@@ -255,20 +255,25 @@ pub fn build_task_command(
             fps,
             format,
         } => build_frames_command(input, output_dir, start, duration, fps, format),
+        TaskRequest::Gif {
+            input,
+            output,
+            start,
+            duration,
+            fps,
+            width,
+        } => build_gif_command(ffmpeg_path, input, output, start, duration, fps, width),
     }
 }
 
-pub fn build_trim_command(
+/// Resolve effective -ss/-t values: start defaults to "0"; an empty duration
+/// probes the source length and subtracts the start.
+fn resolve_start_duration(
     ffmpeg_path: &str,
     input: &str,
-    output: &str,
     start: &str,
     duration: &str,
-    resolution: &Option<String>,
-    framerate: &Option<String>,
-    codec_mode: &Option<String>,
-    rotation: &Option<String>,
-) -> Result<BuiltFfmpegTask, String> {
+) -> Result<(String, String), String> {
     let effective_start = if start.trim().is_empty() {
         "0".to_string()
     } else {
@@ -286,6 +291,22 @@ pub fn build_trim_command(
     } else {
         duration.trim().to_string()
     };
+    Ok((effective_start, effective_duration))
+}
+
+pub fn build_trim_command(
+    ffmpeg_path: &str,
+    input: &str,
+    output: &str,
+    start: &str,
+    duration: &str,
+    resolution: &Option<String>,
+    framerate: &Option<String>,
+    codec_mode: &Option<String>,
+    rotation: &Option<String>,
+) -> Result<BuiltFfmpegTask, String> {
+    let (effective_start, effective_duration) =
+        resolve_start_duration(ffmpeg_path, input, start, duration)?;
     let total_us = parse_duration_us(&effective_duration).unwrap_or(0);
     let preview_offset_us = parse_duration_us(&effective_start).unwrap_or(0);
     let is_copy = codec_mode.as_deref() == Some("copy");
@@ -327,6 +348,52 @@ pub fn build_trim_command(
         "-y".to_string(),
         output.to_string(),
     ]);
+
+    Ok(BuiltFfmpegTask {
+        args,
+        total_us,
+        primary_input: Some(input.to_string()),
+        preview_offset_us,
+    })
+}
+
+pub fn build_gif_command(
+    ffmpeg_path: &str,
+    input: &str,
+    output: &str,
+    start: &str,
+    duration: &str,
+    fps: &Option<String>,
+    width: &Option<String>,
+) -> Result<BuiltFfmpegTask, String> {
+    let (effective_start, effective_duration) =
+        resolve_start_duration(ffmpeg_path, input, start, duration)?;
+    let total_us = parse_duration_us(&effective_duration).unwrap_or(0);
+    let preview_offset_us = parse_duration_us(&effective_start).unwrap_or(0);
+
+    let fps_value = fps.as_deref().filter(|s| !s.is_empty()).unwrap_or("10");
+    let scale = width
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|w| format!("scale={}:-1:flags=lanczos,", w))
+        .unwrap_or_default();
+    // Two-stage palette filter: far better colors than the default 256-color dither.
+    let vf = format!("fps={fps_value},{scale}split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse");
+
+    let args = vec![
+        "-ss".to_string(),
+        effective_start,
+        "-t".to_string(),
+        effective_duration,
+        "-i".to_string(),
+        input.to_string(),
+        "-vf".to_string(),
+        vf,
+        "-progress".to_string(),
+        "pipe:1".to_string(),
+        "-y".to_string(),
+        output.to_string(),
+    ];
 
     Ok(BuiltFfmpegTask {
         args,
@@ -698,6 +765,48 @@ mod tests {
         assert_eq!(built.preview_offset_us, 60_000_000);
         assert_eq!(built.total_us, 10_000_000);
         assert_eq!(built.args[0..2], ["-ss".to_string(), "00:01:00".to_string()]);
+    }
+
+    #[test]
+    fn gif_command_uses_palette_filter_with_defaults() {
+        let built = build_gif_command(
+            "ffmpeg",
+            "in.mp4",
+            "out.gif",
+            "00:00:05",
+            "3",
+            &None,
+            &Some("480".to_string()),
+        )
+        .unwrap();
+        assert_eq!(built.preview_offset_us, 5_000_000);
+        assert_eq!(built.total_us, 3_000_000);
+        let vf_pos = built.args.iter().position(|a| a == "-vf").unwrap();
+        assert_eq!(
+            built.args[vf_pos + 1],
+            "fps=10,scale=480:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
+        );
+        assert_eq!(built.args.last().unwrap(), "out.gif");
+    }
+
+    #[test]
+    fn gif_command_without_width_skips_scale() {
+        let built = build_gif_command(
+            "ffmpeg",
+            "in.mp4",
+            "out.gif",
+            "",
+            "3",
+            &Some("15".to_string()),
+            &None,
+        )
+        .unwrap();
+        let vf_pos = built.args.iter().position(|a| a == "-vf").unwrap();
+        assert_eq!(
+            built.args[vf_pos + 1],
+            "fps=15,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse"
+        );
+        assert_eq!(built.preview_offset_us, 0);
     }
 
     #[test]

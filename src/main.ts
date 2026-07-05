@@ -8,6 +8,7 @@ import { renderHome } from "./home";
 import { renderMerge } from "./merge";
 import { renderSettings } from "./settings";
 import { renderFrames } from "./frames";
+import { renderGif } from "./gif";
 import { renderSetup } from "./setup";
 import { focusTaskOnNextRender, renderTaskList } from "./taskList";
 import {
@@ -158,6 +159,17 @@ async function navigate(page: string, content: HTMLElement) {
     } else if (page === "frames") {
       renderFrames(container);
       pageInitialized[page] = true;
+    } else if (page === "gif") {
+      try {
+        await renderGif(container);
+        pageInitialized[page] = true;
+      } catch (error) {
+        if (isConfigAccessError(error)) {
+          renderConfigError(container, error);
+        } else {
+          renderFatalError(container, error);
+        }
+      }
     }
   }
 }

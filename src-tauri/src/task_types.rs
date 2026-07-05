@@ -7,6 +7,7 @@ pub enum TaskKind {
     Trim,
     Merge,
     Frames,
+    Gif,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -44,6 +45,14 @@ pub enum TaskRequest {
         duration: Option<String>,
         fps: Option<String>,
         format: String,
+    },
+    Gif {
+        input: String,
+        output: String,
+        start: String,
+        duration: String,
+        fps: Option<String>,
+        width: Option<String>,
     },
 }
 

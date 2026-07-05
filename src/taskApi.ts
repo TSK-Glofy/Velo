@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type TaskKind = "trim" | "merge" | "frames";
+export type TaskKind = "trim" | "merge" | "frames" | "gif";
 export type TaskState = "pending" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
 
 export interface TaskMetrics {
