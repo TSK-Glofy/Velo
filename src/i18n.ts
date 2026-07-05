@@ -47,6 +47,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "trim.playFailed": "播放失败: ",
     "trim.openFolderFailed": "打开文件夹失败: ",
     "trim.failed": "失败: ",
+    "trim.invalidTime": "时间格式无效，请使用 时:分:秒 或秒数（如 00:01:30 或 90）",
 
     // Merge
     "merge.title": "视频合并",
@@ -233,6 +234,7 @@ const translations: Record<Lang, Record<string, string>> = {
     "trim.playFailed": "Play failed: ",
     "trim.openFolderFailed": "Failed to open folder: ",
     "trim.failed": "Failed: ",
+    "trim.invalidTime": "Invalid time format. Use H:M:S or seconds (e.g. 00:01:30 or 90)",
 
     // Merge
     "merge.title": "Video Merge",

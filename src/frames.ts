@@ -2,6 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
 import { createTask, openTaskListWindow } from "./taskApi";
+import { attachTimeNormalizer, isInvalidTimeInput } from "./timeFormat";
 
 // Module-level cache: preserves user input across page switches
 const cache: Record<string, string> = {};
@@ -105,6 +106,9 @@ export function renderFrames(container: HTMLElement) {
     el.addEventListener("change", () => { cache[el.id] = el.value; });
   });
 
+  attachTimeNormalizer(container.querySelector("#frames-start") as HTMLInputElement, cache);
+  attachTimeNormalizer(container.querySelector("#frames-duration") as HTMLInputElement, cache);
+
   container.querySelector("#frames-input-btn")!.addEventListener("click", async () => {
     const selected = await open({
       filters: [{ name: t("common.videoFiles"), extensions: ["mp4", "mkv", "avi", "mov", "flv", "wmv", "webm", "ts"] }],
@@ -135,8 +139,10 @@ export function renderFrames(container: HTMLElement) {
   });
 
   extractBtn.addEventListener("click", async () => {
-    const startTime = (container.querySelector("#frames-start") as HTMLInputElement).value;
-    const duration = (container.querySelector("#frames-duration") as HTMLInputElement).value;
+    const startEl = container.querySelector("#frames-start") as HTMLInputElement;
+    const durationEl = container.querySelector("#frames-duration") as HTMLInputElement;
+    const startTime = startEl.value;
+    const duration = durationEl.value;
     const fps = (container.querySelector("#frames-fps") as HTMLSelectElement).value;
     const format = (container.querySelector("#frames-format") as HTMLSelectElement).value;
 
@@ -144,6 +150,15 @@ export function renderFrames(container: HTMLElement) {
       status.textContent = t("frames.needInputAndOutput");
       status.className = "text-sm mt-2 text-warning";
       return;
+    }
+
+    for (const el of [startEl, durationEl]) {
+      if (isInvalidTimeInput(el)) {
+        el.classList.add("input-error");
+        status.textContent = t("trim.invalidTime");
+        status.className = "text-sm mt-2 text-warning";
+        return;
+      }
     }
 
     try {

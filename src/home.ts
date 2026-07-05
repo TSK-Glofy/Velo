@@ -9,6 +9,7 @@ import {
 } from "./configAccess";
 import { t } from "./i18n";
 import { createTask, openTaskListWindow } from "./taskApi";
+import { attachTimeNormalizer, isInvalidTimeInput } from "./timeFormat";
 
 // Module-level cache: preserves user input across page switches
 const cache: Record<string, string> = {};
@@ -200,6 +201,9 @@ export async function renderHome(container: HTMLElement) {
     }
   }
 
+  attachTimeNormalizer(startTime, cache);
+  attachTimeNormalizer(duration, cache);
+
   copyMode.addEventListener("change", () => {
     toggleCopyMode();
     updatePlaceholder();
@@ -295,6 +299,15 @@ export async function renderHome(container: HTMLElement) {
         status.textContent = t("trim.fillAllFields");
         status.className = "text-sm mt-2 text-warning";
         return;
+      }
+
+      for (const el of [startTime, duration]) {
+        if (isInvalidTimeInput(el)) {
+          el.classList.add("input-error");
+          status.textContent = t("trim.invalidTime");
+          status.className = "text-sm mt-2 text-warning";
+          return;
+        }
       }
 
       const exists = await invoke<boolean>("check_file_exists", { path: finalOutput });
