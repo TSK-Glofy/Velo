@@ -26,6 +26,15 @@ export interface RangeSelectorOptions {
 
 const SCRUB_DEBOUNCE_MS = 200;
 
+// Preview size preference, shared by all pages and remembered across restarts.
+const SIZE_KEY = "velo-preview-size";
+const SIZES = [25, 50, 75, 100];
+
+function savedPreviewSize(): number {
+  const v = Number(localStorage.getItem(SIZE_KEY));
+  return SIZES.includes(v) ? v : 50;
+}
+
 export function createRangeSelector(opts: RangeSelectorOptions): RangeSelector {
   const { host, inputPath, onRangeChange } = opts;
 
@@ -34,6 +43,7 @@ export function createRangeSelector(opts: RangeSelectorOptions): RangeSelector {
       <div class="rs-media">
         <video class="rs-video" muted preload="metadata"></video>
         <img class="rs-img hidden" alt="" />
+        <div class="rs-status">${t("range.loading")}</div>
         <div class="rs-badge hidden">${t("range.fallbackBadge")}</div>
       </div>
       <div class="rs-track">
@@ -42,9 +52,11 @@ export function createRangeSelector(opts: RangeSelectorOptions): RangeSelector {
         <div class="rs-handle rs-handle-start" data-handle="start"></div>
         <div class="rs-handle rs-handle-end" data-handle="end"></div>
       </div>
-      <div class="flex justify-between text-xs font-mono opacity-70">
+      <div class="flex justify-between items-center text-xs font-mono opacity-70">
         <span class="rs-label-start">00:00:00</span>
-        <span class="rs-hint font-sans opacity-80">${t("range.loading")}</span>
+        <div class="join rs-sizes">
+          ${SIZES.map((s) => `<button type="button" class="btn btn-xs join-item" data-size="${s}">${s}%</button>`).join("")}
+        </div>
         <span class="rs-label-end">--:--:--</span>
       </div>
     </div>
@@ -59,7 +71,24 @@ export function createRangeSelector(opts: RangeSelectorOptions): RangeSelector {
   const handleEnd = host.querySelector(".rs-handle-end") as HTMLElement;
   const labelStart = host.querySelector(".rs-label-start") as HTMLElement;
   const labelEnd = host.querySelector(".rs-label-end") as HTMLElement;
-  const hint = host.querySelector(".rs-hint") as HTMLElement;
+  const statusOverlay = host.querySelector(".rs-status") as HTMLElement;
+  const sizeButtons = Array.from(host.querySelectorAll<HTMLButtonElement>(".rs-sizes [data-size]"));
+
+  function applyPreviewSize(pct: number) {
+    video.style.width = `${pct}%`;
+    img.style.width = `${pct}%`;
+    for (const btn of sizeButtons) {
+      btn.classList.toggle("btn-active", Number(btn.dataset.size) === pct);
+    }
+  }
+  for (const btn of sizeButtons) {
+    btn.addEventListener("click", () => {
+      const pct = Number(btn.dataset.size);
+      localStorage.setItem(SIZE_KEY, String(pct));
+      applyPreviewSize(pct);
+    });
+  }
+  applyPreviewSize(savedPreviewSize());
 
   let mode: "video" | "frame" = "video";
   let duration = 0;
@@ -113,7 +142,7 @@ export function createRangeSelector(opts: RangeSelectorOptions): RangeSelector {
     if (destroyed) return;
     duration = totalSec;
     ready = true;
-    hint.textContent = t("range.hint");
+    statusOverlay.classList.add("hidden");
     if (pendingRange) {
       [start, end] = pendingRange;
       pendingRange = null;
@@ -145,7 +174,7 @@ export function createRangeSelector(opts: RangeSelectorOptions): RangeSelector {
       const secs = await invoke<number>("get_video_duration", { input: inputPath });
       activate(secs);
     } catch (e) {
-      hint.textContent = `${t("range.error")}${e}`;
+      statusOverlay.textContent = `${t("range.error")}${e}`;
     }
   });
 

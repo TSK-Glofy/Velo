@@ -2,7 +2,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
 import { createTask, openTaskListWindow } from "./taskApi";
-import { attachTimeNormalizer, isInvalidTimeInput } from "./timeFormat";
+import { attachTimeNormalizer, hmsToSeconds, isInvalidTimeInput, secondsToHms } from "./timeFormat";
+import { createRangeSelector, type RangeSelector } from "./rangeSelector";
 
 // Module-level cache: preserves user input across page switches
 const cache: Record<string, string> = {};
@@ -24,6 +25,8 @@ export function renderFrames(container: HTMLElement) {
             <button id="frames-input-btn" class="btn join-item">${t("frames.browse")}</button>
           </div>
         </div>
+
+        <div id="frames-range"></div>
 
         <div class="grid grid-cols-3 gap-4">
           <div>
@@ -106,8 +109,49 @@ export function renderFrames(container: HTMLElement) {
     el.addEventListener("change", () => { cache[el.id] = el.value; });
   });
 
-  attachTimeNormalizer(container.querySelector("#frames-start") as HTMLInputElement, cache);
-  attachTimeNormalizer(container.querySelector("#frames-duration") as HTMLInputElement, cache);
+  const startInput = container.querySelector("#frames-start") as HTMLInputElement;
+  const durationInput = container.querySelector("#frames-duration") as HTMLInputElement;
+  attachTimeNormalizer(startInput, cache);
+  attachTimeNormalizer(durationInput, cache);
+
+  // --- drag-to-select range with live frame preview ---
+  const rangeHost = container.querySelector("#frames-range") as HTMLElement;
+  let rangeSelector: RangeSelector | null = null;
+
+  function syncInputsFromRange(startSec: number, endSec: number) {
+    startInput.value = secondsToHms(startSec);
+    durationInput.value = secondsToHms(endSec - startSec);
+    startInput.classList.remove("input-error");
+    durationInput.classList.remove("input-error");
+    cache[startInput.id] = startInput.value;
+    cache[durationInput.id] = durationInput.value;
+  }
+
+  function syncRangeFromInputs() {
+    if (!rangeSelector) return;
+    const startSec = startInput.value.trim() ? hmsToSeconds(startInput.value) : 0;
+    if (startSec === null) return;
+    const durSec = durationInput.value.trim() ? hmsToSeconds(durationInput.value) : null;
+    rangeSelector.setRange(startSec, durSec === null ? Number.POSITIVE_INFINITY : startSec + durSec);
+  }
+
+  function rebuildRangeSelector() {
+    rangeSelector?.destroy();
+    rangeSelector = null;
+    if (!inputPath.value) return;
+    rangeSelector = createRangeSelector({
+      host: rangeHost,
+      inputPath: inputPath.value,
+      onRangeChange: syncInputsFromRange,
+    });
+    syncRangeFromInputs();
+  }
+
+  startInput.addEventListener("blur", syncRangeFromInputs);
+  durationInput.addEventListener("blur", syncRangeFromInputs);
+  if (inputPath.value) {
+    rebuildRangeSelector();
+  }
 
   container.querySelector("#frames-input-btn")!.addEventListener("click", async () => {
     const selected = await open({
@@ -116,6 +160,7 @@ export function renderFrames(container: HTMLElement) {
     if (selected) {
       inputPath.value = selected as string;
       cache[inputPath.id] = inputPath.value;
+      rebuildRangeSelector();
     }
   });
 

@@ -211,7 +211,6 @@ const translations: Record<Lang, Record<string, string>> = {
 
     // Range selector
     "range.loading": "正在读取视频...",
-    "range.hint": "拖动两侧手柄选择起始/结束位置",
     "range.error": "无法读取视频时长: ",
     "range.fallbackBadge": "FFmpeg 抽帧预览",
 
@@ -427,7 +426,6 @@ const translations: Record<Lang, Record<string, string>> = {
 
     // Range selector
     "range.loading": "Loading video...",
-    "range.hint": "Drag the handles to pick start/end",
     "range.error": "Unable to read video duration: ",
     "range.fallbackBadge": "FFmpeg frame preview",
 
