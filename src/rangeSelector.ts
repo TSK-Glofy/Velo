@@ -30,24 +30,22 @@ export function createRangeSelector(opts: RangeSelectorOptions): RangeSelector {
   const { host, inputPath, onRangeChange } = opts;
 
   host.innerHTML = `
-    <div class="card bg-base-200/80 shadow-md mb-6">
-      <div class="card-body gap-3">
-        <div class="rs-media">
-          <video class="rs-video" muted preload="metadata"></video>
-          <img class="rs-img hidden" alt="" />
-          <div class="rs-badge hidden">${t("range.fallbackBadge")}</div>
-        </div>
-        <div class="rs-track">
-          <div class="rs-rail"></div>
-          <div class="rs-sel"></div>
-          <div class="rs-handle rs-handle-start" data-handle="start"></div>
-          <div class="rs-handle rs-handle-end" data-handle="end"></div>
-        </div>
-        <div class="flex justify-between text-xs font-mono opacity-70">
-          <span class="rs-label-start">00:00:00</span>
-          <span class="rs-hint font-sans opacity-80">${t("range.loading")}</span>
-          <span class="rs-label-end">--:--:--</span>
-        </div>
+    <div class="flex flex-col gap-2">
+      <div class="rs-media">
+        <video class="rs-video" muted preload="metadata"></video>
+        <img class="rs-img hidden" alt="" />
+        <div class="rs-badge hidden">${t("range.fallbackBadge")}</div>
+      </div>
+      <div class="rs-track">
+        <div class="rs-rail"></div>
+        <div class="rs-sel"></div>
+        <div class="rs-handle rs-handle-start" data-handle="start"></div>
+        <div class="rs-handle rs-handle-end" data-handle="end"></div>
+      </div>
+      <div class="flex justify-between text-xs font-mono opacity-70">
+        <span class="rs-label-start">00:00:00</span>
+        <span class="rs-hint font-sans opacity-80">${t("range.loading")}</span>
+        <span class="rs-label-end">--:--:--</span>
       </div>
     </div>
   `;
