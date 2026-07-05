@@ -142,7 +142,9 @@ export function createRangeSelector(opts: RangeSelectorOptions): RangeSelector {
     if (destroyed) return;
     duration = totalSec;
     ready = true;
-    statusOverlay.classList.add("hidden");
+    // Inline style: the unlayered .rs-status{display:flex} rule would win
+    // over Tailwind's layered .hidden utility.
+    statusOverlay.style.display = "none";
     if (pendingRange) {
       [start, end] = pendingRange;
       pendingRange = null;
