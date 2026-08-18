@@ -364,6 +364,9 @@ body {
   height: 28px;
   cursor: pointer;
   touch-action: none;
+  /* 拖动滑块时不要让 WebView 误判为文本选择 */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .rs-rail {

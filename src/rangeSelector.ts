@@ -193,6 +193,10 @@ export function createRangeSelector(opts: RangeSelectorOptions): RangeSelector {
 
   track.addEventListener("pointerdown", (ev) => {
     if (!ready) return;
+    // Without this the webview starts a native text-selection drag as soon as
+    // the pointer moves off the track, which fires pointercancel, silently
+    // drops our pointer capture and leaves `dragging` latched forever.
+    ev.preventDefault();
     const target = ev.target as HTMLElement;
     const explicit = target.dataset?.handle as "start" | "end" | undefined;
     if (explicit) {
@@ -208,6 +212,12 @@ export function createRangeSelector(opts: RangeSelectorOptions): RangeSelector {
 
   function onPointerMove(ev: PointerEvent) {
     if (!dragging || !ready) return;
+    // No button held means we missed the release (capture lost, pointerup
+    // landed outside the track): stop instead of gluing the handle to the cursor.
+    if (ev.type === "pointermove" && ev.buttons === 0) {
+      stopDragging();
+      return;
+    }
     const sec = secondsFromPointer(ev);
     if (dragging === "start") {
       start = Math.min(sec, end);
@@ -219,14 +229,22 @@ export function createRangeSelector(opts: RangeSelectorOptions): RangeSelector {
     onRangeChange(start, end);
   }
 
+  function stopDragging() {
+    if (!dragging) return;
+    dragging = null;
+    onRangeChange(start, end);
+  }
+
   track.addEventListener("pointermove", onPointerMove);
   track.addEventListener("pointerup", (ev) => {
-    if (dragging) {
-      track.releasePointerCapture(ev.pointerId);
-      dragging = null;
-      onRangeChange(start, end);
-    }
+    if (!dragging) return;
+    if (track.hasPointerCapture(ev.pointerId)) track.releasePointerCapture(ev.pointerId);
+    stopDragging();
   });
+  // Any way the gesture can end without a pointerup must clear the drag state,
+  // otherwise later hovers keep moving the handle.
+  track.addEventListener("pointercancel", stopDragging);
+  track.addEventListener("lostpointercapture", stopDragging);
 
   return {
     setRange(startSec: number, endSec: number) {
