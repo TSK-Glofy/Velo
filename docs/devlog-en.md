@@ -864,3 +864,50 @@ Release velo.exe: 10.60 MB → 10.48 MB (no new dependencies; `<video>` is a Web
 | `src-tauri/Cargo.toml` | `version = "0.11.0"` |
 | `src-tauri/tauri.conf.json` | `version: "0.11.0"` |
 | `src/settings.ts` | About card displays v0.11.0 |
+
+---
+
+# v0.12.0 — Timeline Handles Stuck to the Cursor
+
+## Symptom
+
+While dragging a timeline handle on the Trim / GIF / Frame Extraction pages, moving the mouse downwards off the timeline started a native text selection. After releasing the button, both handles stayed glued to the cursor and tracked its X axis.
+
+## Root Cause
+
+The drag logic in `src/rangeSelector.ts` is "capture on pointerdown → update on pointermove → release on pointerup". One link was missing:
+
+1. `pointerdown` never called `preventDefault()`, and `.rs-track` had no `user-select: none`.
+2. Once the pointer left the track, WebView2 (Chromium) decided this was a native text-selection drag and claimed the gesture.
+3. Claiming it fires **`pointercancel`** at the captured element and **implicitly releases the pointer capture**.
+4. The component only listened for `pointermove` / `pointerup` — with no `pointercancel` / `lostpointercapture` handler, `dragging` was never cleared.
+5. With capture gone, the eventual `pointerup` outside the track never reached `.rs-track` — so `dragging` stayed latched forever.
+6. Any later hover over the timeline hit `pointermove`, which snapped the handle to the cursor's X.
+
+## Fix
+
+| Layer | Change |
+|-------|--------|
+| Never lose the gesture | `ev.preventDefault()` on `pointerdown`; `user-select: none` on `.rs-track` |
+| Reset on every exit path | New `pointercancel` / `lostpointercapture` listeners sharing `stopDragging()` with `pointerup` |
+| Safety net | A `pointermove` with `ev.buttons === 0` (no button held) stops the drag |
+| Incidental | Guard `releasePointerCapture` behind `hasPointerCapture` so a lost capture can't throw `InvalidPointerId` |
+
+**Lesson**: with pointer capture, `pointerup` is not the only way a drag ends. Anything that cancels the gesture — native selection, native drag-and-drop, element removal, the browser stealing focus — goes through `pointercancel` / `lostpointercapture`. Ignore those two and the drag state latches.
+
+## Files Touched
+
+| File | Action |
+|------|--------|
+| `src/rangeSelector.ts` | preventDefault + stopDragging + pointercancel/lostpointercapture + buttons guard |
+| `src/styles.css` | `user-select: none` on `.rs-track` |
+| `tests/range-selector-drag.test.mjs` | New: regression test locking in all four guards |
+
+## Version Bump
+
+| File | Field |
+|------|-------|
+| `package.json` / `package-lock.json` | `version: "0.12.0"` |
+| `src-tauri/Cargo.toml` | `version = "0.12.0"` |
+| `src-tauri/tauri.conf.json` | `version: "0.12.0"` |
+| `src/settings.ts` | About card shows v0.12.0 |

@@ -947,3 +947,50 @@ release 版 velo.exe：10.60 MB → 10.48 MB（无新增依赖；`<video>` 是 W
 | `src-tauri/Cargo.toml` | `version = "0.11.0"` |
 | `src-tauri/tauri.conf.json` | `version: "0.11.0"` |
 | `src/settings.ts` | 关于卡片显示 v0.11.0 |
+
+---
+
+# v0.12.0 — 修复时间轴手柄被光标"吸附"
+
+## 现象
+
+在视频截取 / 视频转 GIF / 逐帧提取页面拖动时间轴手柄时，只要鼠标向下滑出时间轴，就会触发浏览器的文本选择框，松开鼠标后两个手柄仍然黏在光标上，随鼠标 X 轴一路跟随。
+
+## 根因
+
+`src/rangeSelector.ts` 的拖动逻辑是「pointerdown 捕获指针 → pointermove 更新 → pointerup 释放」，链条上缺了一环：
+
+1. `pointerdown` 没有 `preventDefault()`，`.rs-track` 也没有 `user-select: none`；
+2. 指针移出时间轴后，WebView2（Chromium）判定这是一次原生文本选择拖拽并接管手势；
+3. 接管时浏览器向被捕获元素派发 **`pointercancel`**，并**隐式释放 pointer capture**；
+4. 组件只监听 `pointermove` / `pointerup`，没有 `pointercancel` / `lostpointercapture`，`dragging` 永远不会被清空；
+5. 捕获已丢失，用户在时间轴外抬起鼠标时 `pointerup` 根本不会到达 `.rs-track` —— `dragging` 就此永久锁死；
+6. 之后鼠标（不按键）经过时间轴，`pointermove` 命中处理函数，手柄立刻吸到光标 X 上。
+
+## 修复
+
+| 层 | 改动 |
+|----|------|
+| 手势不再被抢走 | `pointerdown` 调用 `ev.preventDefault()`；`.rs-track` 加 `user-select: none` |
+| 所有结束路径都复位 | 新增 `pointercancel` / `lostpointercapture` 监听，与 `pointerup` 共用 `stopDragging()` |
+| 兜底 | `pointermove` 时若 `ev.buttons === 0`（没按住键）直接停止拖动 |
+| 顺带 | `releasePointerCapture` 前先 `hasPointerCapture` 判断，避免捕获已丢失时抛 `InvalidPointerId` |
+
+**教训**：用 pointer capture 做拖动时，`pointerup` 不是唯一的结束路径。任何会取消手势的因素（原生选择、原生拖放、元素被移除、浏览器切走焦点）都走 `pointercancel` / `lostpointercapture`，不处理这两个事件，拖动状态就会锁死。
+
+## 文件清单
+
+| 文件 | 动作 |
+|------|------|
+| `src/rangeSelector.ts` | preventDefault + stopDragging + pointercancel/lostpointercapture + buttons 兜底 |
+| `src/styles.css` | `.rs-track` 增加 `user-select: none` |
+| `tests/range-selector-drag.test.mjs` | 新增：回归测试，锁住上述四道防线 |
+
+## 版本号统一更新
+
+| 文件 | 字段 |
+|------|------|
+| `package.json` / `package-lock.json` | `version: "0.12.0"` |
+| `src-tauri/Cargo.toml` | `version = "0.12.0"` |
+| `src-tauri/tauri.conf.json` | `version: "0.12.0"` |
+| `src/settings.ts` | 关于卡片显示 v0.12.0 |
