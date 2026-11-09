@@ -13,7 +13,12 @@ import fs from "node:fs";
 const file = process.env.WORKFLOW_FILE
   ? new URL(process.env.WORKFLOW_FILE, `file://${process.cwd().replace(/\\/g, "/")}/`)
   : new URL("../.github/workflows/release.yml", import.meta.url);
-const yaml = fs.readFileSync(file, "utf8");
+// 行尾必须归一后再断言。core.autocrlf=true 意味着任何一次检出（本地切分支、
+// CI 的 actions/checkout）都可能把这个文件写成 CRLF，那样行首锚点会全部失配，
+// 发版流水线就会在「跑 node 测试」这一步直接挂掉 —— 这个 bug 是在本地把分支
+// 合进 main 之后被合并后测试抓到的，checkout 当场就把它转成了 CRLF。
+// 这里只归一内存里的副本用于断言，不改动文件本身。
+const yaml = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
 
 const failures = [];
 const check = (ok, msg) => { if (!ok) failures.push(msg); };
