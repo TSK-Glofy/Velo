@@ -29,8 +29,8 @@ const A = {
     desc: 'packages[""] 的 "version"',
   },
   cargoTomlPkg: {
-    re: /(\[package\](?:(?!^\[)[\s\S])*?version\s*=\s*")([^"]*)(")/gm,
-    desc: '[package] 段内的 version（依赖项的 version 不在范围内）',
+    re: /(\[package\](?:(?!^\[)[\s\S])*?^version\s*=\s*")([^"]*)(")/gm,
+    desc: '[package] 段内行首的 version（依赖项、以及 rust-version 这类 *version 键都不在范围内）',
   },
   cargoLockVelo: {
     re: /(\[\[package\]\]\s*name\s*=\s*"velo"\s*version\s*=\s*")([^"]*)(")/g,

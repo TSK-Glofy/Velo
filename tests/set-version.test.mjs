@@ -112,4 +112,17 @@ assert.equal(bad.mismatches.length, 6);                 // 6 个文件全部对�
 assert.ok(bad.mismatches.every((m) => m.includes("9.9.9")));
 assert.ok(bad.mismatches.some((m) => m.startsWith("src/settings.ts")));
 
+// --- Cargo.toml：rust-version 不能被误当成 [package] 的 version ---
+// 终审发现：锚点若不钉在行首，懒量词会在 `rust-version = "` 的 rust- 之后命中，
+// 于是脚本去改 MSRV、把真正的 version 留在旧值。而 readVersions 用的是同一个
+// 锚点，--verify 读回来的也是那个被改过的 MSRV —— 两道闸门会一起失效。
+const cargoTomlMsrv = [
+  '[package]', 'name = "velo"', 'rust-version = "1.77"', 'version = "0.12.0"', 'edition = "2021"', '',
+  '[dependencies]', 'chrono = { version = "0.4", features = ["serde"] }', '',
+].join("\n");
+const msrvOut = setCargoTomlVersion(cargoTomlMsrv, "0.13.0");
+assert.match(msrvOut, /^rust-version = "1\.77"$/m);     // MSRV 没被动
+assert.match(msrvOut, /^version = "0\.13\.0"$/m);       // 真正的 version 改了
+assert.match(msrvOut, /chrono = \{ version = "0\.4"/);  // 依赖也没被动
+
 console.log("set-version tests passed");

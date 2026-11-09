@@ -25,8 +25,8 @@ jobs:
   release:
     runs-on: windows-latest
 
-    # version 从不直接插进 shell 命令，一律经 env 传入：表达式插值会在 shell 解析前
-    # 做字符串替换，直接拼进 run: 等于把输入当代码执行。
+    # version 从不直接插进 shell 命令，一律经 env 传入：表达式插值会在 shell
+    # 解析前做字符串替换，直接拼进 run: 等于把输入当代码执行。
     env:
       VERSION: ${{ inputs.version }}
       MODE: ${{ inputs.mode }}
@@ -68,6 +68,13 @@ jobs:
       - name: 跑 node 测试
         run: npm run test:node
 
+      # 覆盖 config.rs 与 paths.rs 的 38 个测试 —— 正是「发版把用户数据搞丢」
+      # 这条反目标所保护的文件。试打包不需要这道闸门，发版需要。
+      - name: 跑 Rust 测试
+        if: inputs.mode != 'build-only'
+        working-directory: src-tauri
+        run: cargo test
+
       # ---- 发布前置校验：全部排在改动任何文件之前，不过就什么痕迹都不留 ----
       - name: 发布前置校验
         if: inputs.mode != 'build-only'
@@ -89,20 +96,37 @@ jobs:
           echo "Release 正文 $(wc -l < release-body.md) 行，预览："
           head -5 release-body.md
 
-          # tag 已存在时的放行条件
+          # tag 已存在时，按「有没有 Release、是不是草稿、当前什么模式」分情形
+          # 给出不同指引。关键是别把用户推去手动删 tag —— 那正是这条流水线要
+          # 消灭的手工活，而多数情况下正确动作根本不是删。
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            if [ "$MODE" = "publish" ]; then
-              echo "::error::tag $TAG 已存在。publish 不覆盖已有版本 —— 要重发请先手动删掉远端 tag 和 Release"
+            HAS_RELEASE=false
+            IS_DRAFT=false
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              HAS_RELEASE=true
+              if [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" = "true" ]; then
+                IS_DRAFT=true
+              fi
+            fi
+
+            if [ "$HAS_RELEASE" = true ] && [ "$IS_DRAFT" != true ]; then
+              echo "::error::$TAG 的 Release 已经发布。已发布的版本不能覆盖 —— 要重发请先手动删掉远端 tag 和它的 Release。"
               exit 1
             fi
-            if gh release view "$TAG" >/dev/null 2>&1; then
-              if [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" != "true" ]; then
-                echo "::error::$TAG 的 Release 已经发布，不能覆盖"
-                exit 1
+
+            if [ "$MODE" = "publish" ]; then
+              if [ "$IS_DRAFT" = true ]; then
+                echo "::error::$TAG 已经有一个草稿 Release 了。要把它正式发出去，到 GitHub 的 Release 页面点一下 Publish 即可，不必重跑这条流水线；只有想换掉草稿内容时才重跑 draft 模式。"
+              else
+                echo "::error::tag $TAG 已在远端但还没有 Release（上次大概挂在建 Release 这一步）。用 draft 模式重跑可以自动补齐，然后在网页上点 Publish。"
               fi
+              exit 1
+            fi
+
+            if [ "$HAS_RELEASE" = true ]; then
               echo "$TAG 已有草稿 Release，本次将覆盖它"
             else
-              echo "$TAG 的 tag 在远端但没有对应 Release（上次大概挂在建 Release 这一步），本次补齐"
+              echo "$TAG 的 tag 在远端但没有对应 Release，本次补齐"
             fi
           fi
 
@@ -128,15 +152,18 @@ jobs:
       - name: 构建 NSIS setup.exe
         run: npm run build:nsis
 
+      # 三种模式都挂到运行记录上。发版模式下这看着和 Release assets 重复，但
+      # 「建 Release」那一步失败时，它是十几分钟构建成果的唯一去处。
+      #
       # 按确切文件名上传，不用通配符：bundle/ 目录不会被清理，通配符有扫到陈旧
       # 产物的风险；写死文件名 + if-no-files-found: error 还能让「某个包没打出来」
       # 直接变成构建失败，而不是悄悄发一个少了附件的 Release。
-      - name: 挂到本次运行记录（试打包）
-        if: inputs.mode == 'build-only'
+      - name: 挂到本次运行记录
         uses: actions/upload-artifact@v4
         with:
           name: velo-${{ inputs.version }}-installers
           if-no-files-found: error
+          retention-days: 7
           path: |
             ${{ env.MSI_EN }}
             ${{ env.MSI_ZH }}
@@ -161,8 +188,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # 只暂存这 6 个文件。构建会动 src-tauri/installer/install.json（虽然打完
-          # 会还原）、也会生成 release-body.md，`git add -A` 可能把它们一起卷进来。
+          # 只暂存这 6 个文件。构建会改写被跟踪的 src-tauri/installer/install.json
+          # （打完会还原，但窗口存在），前置校验还在工作区留了 release-body.md，
+          # git add -A 会把它们一起卷进发布 commit。
           git add package.json package-lock.json \
                   src-tauri/Cargo.toml src-tauri/Cargo.lock \
                   src-tauri/tauri.conf.json src/settings.ts
@@ -176,12 +204,21 @@ jobs:
 
           git push origin HEAD:main
 
-          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            # 只有 draft 模式能走到这里（publish 已在前置校验被挡），而且它的
-            # Release 必定还没发布。把 tag 对齐到这次实际构建的 commit —— 否则
-            # tag 指向的代码和挂上去的安装包对不上，正是「tag 必须与产物一致」
-            # 这条要防的事。
-            echo "tag $TAG 已存在，对齐到本次构建的 commit $(git rev-parse --short HEAD)"
+          TAG_COMMIT="$(git rev-parse -q --verify "refs/tags/$TAG^{commit}" || true)"
+          HEAD_COMMIT="$(git rev-parse HEAD)"
+
+          if [ "$TAG_COMMIT" = "$HEAD_COMMIT" ]; then
+            # 重跑且什么都没变。git tag -f -a 每次都会生成新的 annotated tag 对象、
+            # 让 ref 的 SHA 变掉，已 fetch 过它的人下次就得 --force；这里不动它。
+            echo "tag $TAG 已指向本次构建的 commit，保持不动"
+          elif git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            # 只有 draft 能走到这里（publish 已在前置校验被挡），但那次检查距此
+            # 隔了三次构建，所以就地再守一次。
+            if [ "$MODE" != "draft" ]; then
+              echo "::error::$MODE 模式不允许移动已有的 tag $TAG"
+              exit 1
+            fi
+            echo "tag $TAG 指向别处，对齐到本次构建的 commit"
             git tag -f -a "$TAG" -m "Velo $TAG"
             git push --force origin "refs/tags/$TAG"
           else
@@ -189,12 +226,23 @@ jobs:
             git push origin "refs/tags/$TAG"
           fi
 
+          echo "::notice::main 上可能多了一个版本号 commit —— 本地动手前记得先 git pull"
+
       - name: 建 Release 并传包
         if: inputs.mode != 'build-only'
         shell: bash
         run: |
-          # 草稿覆盖：删掉旧草稿再重建。gh release delete 默认不动 tag，正合需要。
+          # 就地复查，不信任十几分钟前那次前置校验：三次构建期间，用户完全可能
+          # 去把上一个草稿点了 Publish。检查必须和它守护的动作相邻。
           if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$MODE" != "draft" ]; then
+              echo "::error::$TAG 已经有 Release，而当前是 $MODE 模式 —— 拒绝覆盖"
+              exit 1
+            fi
+            if [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" != "true" ]; then
+              echo "::error::$TAG 的 Release 已经发布，拒绝覆盖。要重发请先手动删掉它"
+              exit 1
+            fi
             gh release delete "$TAG" --yes
             echo "已删除 $TAG 的旧草稿 Release"
           fi
