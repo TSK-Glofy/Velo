@@ -29,3 +29,9 @@ dist-ssr
 # Codex
 .superpowers/*
 .worktrees/
+
+# Docs (only the zh/en devlogs and the release notes are tracked)
+docs/*
+!docs/devlog-zh.md
+!docs/devlog-en.md
+!docs/release-notes/
