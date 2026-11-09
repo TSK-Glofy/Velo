@@ -1,0 +1,87 @@
+name: Release
+
+# 只有手动触发。普通 commit 不碰 CI —— 这是明确要求，不要加 push / pull_request。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "裸版本号，不带 v 前缀，例如 0.13.0"
+        type: string
+        required: true
+      mode:
+        description: "build-only=只试打包不动仓库 / draft=发草稿 / publish=直接公开"
+        type: choice
+        required: true
+        default: build-only
+        options:
+          - build-only
+          - draft
+          - publish
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # version 从不直接插进 shell 命令，一律经 env 传入：${{ }} 会在 shell 解析前
+      # 做字符串替换，直接拼进 run: 等于把输入当代码执行。
+      - name: 校验 version 输入
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version 必须形如 0.13.0（裸 semver，不带 v 前缀），收到的是 '$VERSION'"
+            exit 1
+          fi
+          echo "将要构建的版本：$VERSION（模式 ${{ inputs.mode }}）"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # 这条链上的每一步都依赖 set-version.mjs 和 release-notes.mjs 正确；
+      # 它们的测试只要几秒，而一次构建要十几分钟，先跑测试划算得多。
+      - name: 跑 node 测试
+        run: npm run test:node
+
+      # 只改 CI 自己的工作副本。build-only 模式下这些改动跑完就扔，
+      # 但包文件名里带的就是这里写进去的版本号 —— 试装的才是真东西。
+      - name: 同步 6 处版本号
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: node scripts/set-version.mjs "$VERSION"
+
+      - name: 构建 en-US MSI
+        run: npm run build:msi:en
+
+      - name: 构建 zh-CN MSI
+        run: npm run build:msi:zh
+
+      - name: 构建 NSIS setup.exe
+        run: npm run build:nsis
+
+      # 按确切文件名上传，不用通配符：bundle/ 目录不会被清理，通配符有扫到
+      # 陈旧产物的风险；写死文件名 + if-no-files-found: error 还能让「某个包
+      # 没打出来」直接变成构建失败，而不是悄悄发一个少了附件的 Release。
+      - name: 上传 3 个安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: velo-${{ inputs.version }}-installers
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/msi/velo_${{ inputs.version }}_x64_en-US.msi
+            src-tauri/target/release/bundle/msi/velo_${{ inputs.version }}_x64_zh-CN.msi
+            src-tauri/target/release/bundle/nsis/velo_${{ inputs.version }}_x64-setup.exe

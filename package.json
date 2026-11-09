@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "test:node": "node tests/task-format.test.mjs && node tests/task-list-render.test.mjs && node tests/source-pages-task-api.test.mjs && node tests/range-selector-drag.test.mjs && node tests/set-version.test.mjs && node tests/release-notes.test.mjs",
     "build:msi:en": "node scripts/build-msi-locale.mjs en_US",
-    "build:msi:zh": "node scripts/build-msi-locale.mjs zh_CN"
+    "build:msi:zh": "node scripts/build-msi-locale.mjs zh_CN",
+    "build:nsis": "tauri build --bundles nsis"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
