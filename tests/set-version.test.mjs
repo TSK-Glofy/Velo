@@ -85,7 +85,7 @@ assert.throws(
 // brief 未要求此用例；加它是因为 readVersions 是 Task 6 反向校验的唯一依靠，
 // 而针对真实文件的断言能长期挡住锚点随重构而失配（尤其 settings.ts）。
 import { fileURLToPath } from "node:url";
-import { readVersions, VERSION_FILES } from "../scripts/set-version.mjs";
+import { readVersions, verifyVersions, VERSION_FILES } from "../scripts/set-version.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const found = readVersions(repoRoot);
@@ -99,5 +99,17 @@ const all = Object.values(found).flat();
 assert.equal(all.length, 7);                       // package-lock.json 占两处
 assert.ok(all.every((v) => v === all[0]), `版本号不一致: ${JSON.stringify(found)}`);
 assert.match(all[0], /^\d+\.\d+\.\d+$/);
+
+// --- verifyVersions：workflow 在 commit 前的反向校验所依赖的闸门 ---
+const current = Object.values(readVersions(repoRoot)).flat()[0];
+const good = verifyVersions(repoRoot, current);
+assert.equal(good.ok, true);
+assert.deepEqual(good.mismatches, []);
+
+const bad = verifyVersions(repoRoot, "9.9.9");
+assert.equal(bad.ok, false);
+assert.equal(bad.mismatches.length, 6);                 // 6 个文件全部对不上
+assert.ok(bad.mismatches.every((m) => m.includes("9.9.9")));
+assert.ok(bad.mismatches.some((m) => m.startsWith("src/settings.ts")));
 
 console.log("set-version tests passed");

@@ -101,16 +101,51 @@ export function readVersions(rootDir) {
   return out;
 }
 
+/**
+ * 反向校验：读回 6 个文件里的版本号，逐一与期望值比对。
+ *
+ * 这是「不允许版本号不一致的状态被提交」的最后一道闸门。各 transform 自己的
+ * 「锚点必须命中一次」是第一道；但如果将来有人重构了 settings.ts 的结构、
+ * 顺手把锚点契约也改坏了，只有这里还能在 commit 之前拦住。
+ */
+export function verifyVersions(rootDir, expected) {
+  const versions = readVersions(rootDir);
+  const mismatches = [];
+  for (const [file, found] of Object.entries(versions)) {
+    if (found.length === 0 || found.some((v) => v !== expected)) {
+      mismatches.push(`${file}: 读到 ${JSON.stringify(found)}，期望 ${expected}`);
+    }
+  }
+  return { ok: mismatches.length === 0, versions, mismatches };
+}
+
 const invokedDirectly =
   process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (invokedDirectly) {
-  const version = process.argv[2];
+  const args = process.argv.slice(2);
+  const verifyOnly = args[0] === "--verify";
+  const version = verifyOnly ? args[1] : args[0];
   if (!/^\d+\.\d+\.\d+$/.test(version ?? "")) {
-    console.error("用法: node scripts/set-version.mjs <semver>    例如 0.13.0（不带 v 前缀）");
+    console.error("用法: node scripts/set-version.mjs [--verify] <semver>    例如 0.13.0（不带 v 前缀）");
     process.exit(1);
   }
   const root = process.cwd();
+
+  if (verifyOnly) {
+    const { ok, versions, mismatches } = verifyVersions(root, version);
+    if (!ok) {
+      console.error(`版本号与 ${version} 不一致，发布中止：`);
+      for (const line of mismatches) console.error(`  - ${line}`);
+      process.exit(1);
+    }
+    console.log(`6 处版本号均为 ${version}：`);
+    for (const [file, found] of Object.entries(versions)) {
+      console.log(`  ${file}: ${found.join(", ")}`);
+    }
+    process.exit(0);
+  }
+
   for (const entry of VERSION_FILES) {
     const file = path.join(root, entry.path);
     const before = fs.readFileSync(file, "utf8");

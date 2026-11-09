@@ -18,25 +18,37 @@ on:
           - draft
           - publish
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: windows-latest
 
+    # version 从不直接插进 shell 命令，一律经 env 传入：表达式插值会在 shell 解析前
+    # 做字符串替换，直接拼进 run: 等于把输入当代码执行。
+    env:
+      VERSION: ${{ inputs.version }}
+      MODE: ${{ inputs.mode }}
+      TAG: v${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      MSI_EN: src-tauri/target/release/bundle/msi/velo_${{ inputs.version }}_x64_en-US.msi
+      MSI_ZH: src-tauri/target/release/bundle/msi/velo_${{ inputs.version }}_x64_zh-CN.msi
+      SETUP_EXE: src-tauri/target/release/bundle/nsis/velo_${{ inputs.version }}_x64-setup.exe
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # version 从不直接插进 shell 命令，一律经 env 传入：${{ }} 会在 shell 解析前
-      # 做字符串替换，直接拼进 run: 等于把输入当代码执行。
       - name: 校验 version 输入
         shell: bash
-        env:
-          VERSION: ${{ inputs.version }}
         run: |
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::version 必须形如 0.13.0（裸 semver，不带 v 前缀），收到的是 '$VERSION'"
             exit 1
           fi
-          echo "将要构建的版本：$VERSION（模式 ${{ inputs.mode }}）"
+          echo "版本 $VERSION，模式 $MODE"
 
       - uses: actions/setup-node@v4
         with:
@@ -51,19 +63,62 @@ jobs:
         with:
           workspaces: src-tauri
 
-      # 这条链上的每一步都依赖 set-version.mjs 和 release-notes.mjs 正确；
-      # 它们的测试只要几秒，而一次构建要十几分钟，先跑测试划算得多。
+      # 整条流水线都依赖 set-version.mjs 和 release-notes.mjs 正确；它们的测试
+      # 只要几秒，而一次构建要十几分钟，先跑测试划算得多。
       - name: 跑 node 测试
         run: npm run test:node
 
-      # 只改 CI 自己的工作副本。build-only 模式下这些改动跑完就扔，
-      # 但包文件名里带的就是这里写进去的版本号 —— 试装的才是真东西。
+      # ---- 发布前置校验：全部排在改动任何文件之前，不过就什么痕迹都不留 ----
+      - name: 发布前置校验
+        if: inputs.mode != 'build-only'
+        shell: bash
+        run: |
+          # 用 Actions 内置的 $GITHUB_REF_NAME，不走表达式插值 —— 同样是避免把
+          # 外部值拼进 shell 代码（分支名允许包含 shell 元字符）。
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "::error::$MODE 模式只能从 main 跑，当前分支是 $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+          # release notes 必须存在且能抽出非空的英文正文，否则会发出空白 Release
+          node scripts/release-notes.mjs "$VERSION" > release-body.md
+          if [ ! -s release-body.md ]; then
+            echo "::error::docs/release-notes/v$VERSION.md 抽不出英文正文"
+            exit 1
+          fi
+          echo "Release 正文 $(wc -l < release-body.md) 行，预览："
+          head -5 release-body.md
+
+          # tag 已存在时的放行条件
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            if [ "$MODE" = "publish" ]; then
+              echo "::error::tag $TAG 已存在。publish 不覆盖已有版本 —— 要重发请先手动删掉远端 tag 和 Release"
+              exit 1
+            fi
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              if [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" != "true" ]; then
+                echo "::error::$TAG 的 Release 已经发布，不能覆盖"
+                exit 1
+              fi
+              echo "$TAG 已有草稿 Release，本次将覆盖它"
+            else
+              echo "$TAG 的 tag 在远端但没有对应 Release（上次大概挂在建 Release 这一步），本次补齐"
+            fi
+          fi
+
       - name: 同步 6 处版本号
         shell: bash
-        env:
-          VERSION: ${{ inputs.version }}
         run: node scripts/set-version.mjs "$VERSION"
 
+      # set-version 自己的「锚点必须命中一次」是第一道闸门；这里是最后一道 ——
+      # 万一将来有人重构 settings.ts 时把锚点契约也改坏了，只有这里能在
+      # commit 之前拦住一个版本号不一致的状态。
+      - name: 反向校验 6 处版本号
+        shell: bash
+        run: node scripts/set-version.mjs --verify "$VERSION"
+
+      # ---- 编译。刻意排在所有 git 写操作之前：编译失败时仓库零痕迹，重跑即可。
+      #      反过来先 push 再编译，一挂就在 main 上留个没有 Release 的悬空 tag。----
       - name: 构建 en-US MSI
         run: npm run build:msi:en
 
@@ -73,15 +128,86 @@ jobs:
       - name: 构建 NSIS setup.exe
         run: npm run build:nsis
 
-      # 按确切文件名上传，不用通配符：bundle/ 目录不会被清理，通配符有扫到
-      # 陈旧产物的风险；写死文件名 + if-no-files-found: error 还能让「某个包
-      # 没打出来」直接变成构建失败，而不是悄悄发一个少了附件的 Release。
-      - name: 上传 3 个安装包
+      # 按确切文件名上传，不用通配符：bundle/ 目录不会被清理，通配符有扫到陈旧
+      # 产物的风险；写死文件名 + if-no-files-found: error 还能让「某个包没打出来」
+      # 直接变成构建失败，而不是悄悄发一个少了附件的 Release。
+      - name: 挂到本次运行记录（试打包）
+        if: inputs.mode == 'build-only'
         uses: actions/upload-artifact@v4
         with:
           name: velo-${{ inputs.version }}-installers
           if-no-files-found: error
           path: |
-            src-tauri/target/release/bundle/msi/velo_${{ inputs.version }}_x64_en-US.msi
-            src-tauri/target/release/bundle/msi/velo_${{ inputs.version }}_x64_zh-CN.msi
-            src-tauri/target/release/bundle/nsis/velo_${{ inputs.version }}_x64-setup.exe
+            ${{ env.MSI_EN }}
+            ${{ env.MSI_ZH }}
+            ${{ env.SETUP_EXE }}
+
+      - name: 确认 3 个安装包都在
+        if: inputs.mode != 'build-only'
+        shell: bash
+        run: |
+          for f in "$MSI_EN" "$MSI_ZH" "$SETUP_EXE"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::没有产出 $f"
+              exit 1
+            fi
+            echo "$f  $(du -h "$f" | cut -f1)"
+          done
+
+      - name: 提交版本号改动并打 tag
+        if: inputs.mode != 'build-only'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 只暂存这 6 个文件。构建会动 src-tauri/installer/install.json（虽然打完
+          # 会还原）、也会生成 release-body.md，`git add -A` 可能把它们一起卷进来。
+          git add package.json package-lock.json \
+                  src-tauri/Cargo.toml src-tauri/Cargo.lock \
+                  src-tauri/tauri.conf.json src/settings.ts
+
+          if git diff --cached --quiet; then
+            echo "6 处版本号本来就是 $VERSION，没有改动可提交 —— 直接给当前 HEAD 打 tag"
+          else
+            git commit -m "chore: release $TAG"
+            echo "已提交版本号改动"
+          fi
+
+          git push origin HEAD:main
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            # 只有 draft 模式能走到这里（publish 已在前置校验被挡），而且它的
+            # Release 必定还没发布。把 tag 对齐到这次实际构建的 commit —— 否则
+            # tag 指向的代码和挂上去的安装包对不上，正是「tag 必须与产物一致」
+            # 这条要防的事。
+            echo "tag $TAG 已存在，对齐到本次构建的 commit $(git rev-parse --short HEAD)"
+            git tag -f -a "$TAG" -m "Velo $TAG"
+            git push --force origin "refs/tags/$TAG"
+          else
+            git tag -a "$TAG" -m "Velo $TAG"
+            git push origin "refs/tags/$TAG"
+          fi
+
+      - name: 建 Release 并传包
+        if: inputs.mode != 'build-only'
+        shell: bash
+        run: |
+          # 草稿覆盖：删掉旧草稿再重建。gh release delete 默认不动 tag，正合需要。
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes
+            echo "已删除 $TAG 的旧草稿 Release"
+          fi
+
+          DRAFT_FLAG=()
+          if [ "$MODE" = "draft" ]; then
+            DRAFT_FLAG=(--draft)
+          fi
+
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file release-body.md \
+            "${DRAFT_FLAG[@]}" \
+            "$MSI_EN" "$MSI_ZH" "$SETUP_EXE"
+
+          echo "完成：$(gh release view "$TAG" --json url -q .url)"
